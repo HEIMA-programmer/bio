@@ -14,3 +14,7 @@ Thumbs.db
 *.pt
 *.pth
 *.ckpt
+
+# 配图字体(体积大, 可由 figgen/extract_sc_font.py 从系统 Noto CJK 重新提取)
+scripts/figgen/fonts/*.otf
+scripts/figgen/fonts/*.ttc
