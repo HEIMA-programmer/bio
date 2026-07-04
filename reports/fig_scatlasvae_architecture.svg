@@ -1,0 +1,57 @@
+<svg width="720" height="440" viewBox="0 0 720 440" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, Arial, sans-serif">
+<title>scAtlasVAE 架构图</title>
+<desc>数据流：基因表达 X → 批不变编码器 F(X) → 潜向量 z=μ+σε → 批条件解码器 F(z,B)（批次 B 在此注入）→ ZINB 三头（scale×文库=μ、离散度 θ、门控 π）重构计数；z 另接分类头预测细胞类型。总损失 = ZINB 重构 + KL + 交叉熵分类。</desc>
+<defs>
+<marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#57606a"/></marker>
+</defs>
+<rect x="0" y="0" width="720" height="440" fill="#ffffff"/>
+<text x="360" y="28" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2328">scAtlasVAE 架构：批不变编码器 + 批条件解码器 + ZINB + 分类头</text>
+
+<!-- 主流水线 (y中心=150) -->
+<rect x="20" y="118" width="92" height="64" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="66" y="146" text-anchor="middle" font-size="13" fill="#1f2328">基因表达 X</text>
+<text x="66" y="164" text-anchor="middle" font-size="11" fill="#57606a">(原始计数)</text>
+
+<rect x="142" y="118" width="140" height="64" rx="8" fill="#eaf1fd" stroke="#2f6feb"/>
+<text x="212" y="146" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">批不变编码器</text>
+<text x="212" y="164" text-anchor="middle" font-size="11" fill="#57606a">F(X)：只吃 X，不看 batch</text>
+
+<rect x="312" y="118" width="118" height="64" rx="8" fill="#f3eefb" stroke="#8250df"/>
+<text x="371" y="146" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">z = μ + σ·ε</text>
+<text x="371" y="164" text-anchor="middle" font-size="11" fill="#57606a">潜空间 (10 维)</text>
+
+<rect x="460" y="118" width="140" height="64" rx="8" fill="#e9f6ec" stroke="#2ea043"/>
+<text x="530" y="146" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">批条件解码器</text>
+<text x="530" y="164" text-anchor="middle" font-size="11" fill="#57606a">F(z, B)</text>
+
+<rect x="612" y="112" width="96" height="76" rx="8" fill="#e9f6ec" stroke="#2ea043"/>
+<text x="660" y="134" text-anchor="middle" font-size="12" font-weight="600" fill="#1f2328">ZINB 三头</text>
+<text x="660" y="152" text-anchor="middle" font-size="10.5" fill="#57606a">scale×文库=μ</text>
+<text x="660" y="167" text-anchor="middle" font-size="10.5" fill="#57606a">离散度 θ</text>
+<text x="660" y="181" text-anchor="middle" font-size="10.5" fill="#57606a">门控 π</text>
+
+<!-- 批次注入 -->
+<rect x="460" y="250" width="140" height="50" rx="8" fill="#f6f8fa" stroke="#57606a"/>
+<text x="530" y="272" text-anchor="middle" font-size="13" fill="#1f2328">批次 B → 嵌入</text>
+<text x="530" y="290" text-anchor="middle" font-size="11" fill="#57606a">仅在解码端注入</text>
+
+<!-- 分类头 -->
+<rect x="312" y="250" width="118" height="66" rx="8" fill="#fdf1e3" stroke="#e8890c"/>
+<text x="371" y="273" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2328">分类头(线性)</text>
+<text x="371" y="290" text-anchor="middle" font-size="11" fill="#57606a">→ 细胞类型</text>
+<text x="371" y="305" text-anchor="middle" font-size="11" fill="#57606a">(半监督, 可选)</text>
+
+<!-- 箭头 -->
+<line x1="112" y1="150" x2="140" y2="150" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="282" y1="150" x2="310" y2="150" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="296" y="142" text-anchor="middle" font-size="10" fill="#8250df">μ,σ²</text>
+<line x1="430" y1="150" x2="458" y2="150" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="600" y1="150" x2="610" y2="150" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="530" y1="250" x2="530" y2="184" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="371" y1="182" x2="371" y2="250" stroke="#57606a" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<!-- 损失条 -->
+<rect x="20" y="360" width="688" height="46" rx="8" fill="#fff8e6" stroke="#d4a72c"/>
+<text x="360" y="380" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">总损失 = ① ZINB 负对数似然(重构)  +  λ_KL · ② KL(z ‖ N(0, I))  +  λ_ct · ③ 交叉熵(分类)</text>
+<text x="360" y="398" text-anchor="middle" font-size="11" fill="#57606a">① 来自解码器三头对真实计数的拟合　② 来自潜空间正则(见 01 文档 §1.4e)　③ 来自分类头</text>
+</svg>
