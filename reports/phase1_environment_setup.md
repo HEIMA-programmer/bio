@@ -1,68 +1,116 @@
-# 阶段一 · 环境搭建（Windows + RTX 4060 + conda）
+# 阶段一 · 环境搭建 + 学会"摸清一个陌生库"（Windows + RTX 4060 + conda）
 
 > 目标机器：本地 **RTX 4060（8GB, Ada Lovelace 架构, 算力 sm_89）**，**Windows 原生**，用 **conda** 管理环境。
-> 本文既是操作指南，也是记录（每步留了"记录区"）。遇到任何报错，把**完整报错**贴给军师。
 > 先读过 [`00_overview_and_learning_map.md`](00_overview_and_learning_map.md) 和 [`01_concepts_and_toolbox.md`](01_concepts_and_toolbox.md) 会更顺。
 
 ---
 
-## 1. 阶段概览
+## 1. 阶段概览：这一阶段有两个目标
 
-这一阶段要在你的 4060 上搭出一个**能真正训练 scAtlasVAE 的 Python 环境**，并用一个"冒烟测试"证明整条链路（环境 → GPU → 模型训练）是通的。
+- **目标 A（操作）**：在你的 4060 上搭出一个能真正训练 scAtlasVAE 的环境，并用冒烟测试证明整条链路通。
+- **目标 B（能力，同样重要）**：学会一套**"拿到一个陌生的库，如何自己摸清它"**的通用方法。
 
-在整个复现旅程里，这是第 1 站，也是**最容易在第一天翻车**的一站——不是因为难，而是因为这个仓库锁定的依赖是 2022 年的旧版本，和你 2024 年的新显卡不匹配。本阶段的价值，一半在"把环境搭好"，另一半在**理解为什么会不匹配、怎么系统地解决**。
-
-> **心态**：环境问题几乎人人都会遇到，卡住很正常。原则是**装不上就停下贴报错**，不要自己反复试导致环境更乱。目标是别在这一阶段耗超过两天。
+> **为什么强调目标 B**：复现的核心能力，不是记住"scAtlasVAE 把 torch 锁成 1.13.1"这种结论，而是**下次拿到任何一个陌生库，你都知道去哪看、看什么、怎么判断**。所以本报告里每一个"事实"，我都会先告诉你**我是怎么找到它的**（§3、§4），你完全可以打开仓库跟着自己查一遍，再进入动手安装（§6）。
 
 ---
 
 ## 2. 学习目标
 
-完成本阶段后，你应该能说清：
+完成本阶段后你应该能：
 
-- GPU 的**算力架构 (compute capability, 如 sm_89)** 和 **CUDA/PyTorch 版本**之间是什么关系，为什么它决定了你装哪个版本的 PyTorch；
-- **conda** 和 **pip** 各自负责什么，为什么两者配合用；
-- 什么是**冒烟测试 (smoke test)**，为什么要先用最小例子验证环境、再上真实数据；
-- 本阶段三个"为什么这么做"：为什么**先装 PyTorch**、为什么用 **`--no-deps`** 装本体、为什么给 `chunked_anndata` 打**补丁**。
-
----
-
-## 3. 会遇到的工具
-
-> **包速览 — conda**：环境与包管理器。核心能力是**环境隔离**——为不同项目建互不干扰的"沙盒"，各自锁定不同的 Python 和库版本。我们用它建一个 `python=3.8` 的干净环境，避免污染系统。
-
-> **包速览 — pip**：Python 官方装包工具。conda 建好环境后，具体的库大多用 pip 装（尤其 PyTorch 的 CUDA 版本，官方推荐用 pip 从其专用源装）。
-
-> **包速览 — NVIDIA 驱动 / CUDA**：**驱动 (driver)** 让操作系统能驱动显卡；**CUDA** 是在 GPU 上做通用计算的平台。`nvidia-smi` 右上角显示的 `CUDA Version` 是**你的驱动所能支持的最高 CUDA 版本**（向下兼容），不是你必须用这个版本。PyTorch 的 GPU 版会**自带**它需要的 CUDA 运行时，只要驱动支持的版本 ≥ 它需要的即可。
-
-> **包速览 — PyTorch**：深度学习框架（见 `01` 文档）。它的 GPU 版本按 CUDA 版本区分，写作 `cu117`、`cu118` 等——**选错会导致显卡用不了**，这正是本阶段的核心坑。
+- 复述一套"侦查陌生库"的通用清单：**去哪看、看什么、为什么**（§3）；
+- 自己动手在 scAtlasVAE 仓库里**查证**关键事实（依赖版本、能否在你显卡上跑、入口 API、隐藏依赖）（§4）；
+- 说清 GPU 算力（如 sm_89）与 CUDA / PyTorch 版本的关系，并会自己查；
+- 理解 conda / pip 的分工，会用冒烟测试验证环境。
 
 ---
 
-## 4. 背景与原理：为什么不能照仓库原样装
+## 3. 通用方法：拿到一个陌生的库，先看这六个地方
 
-仓库的 `requirements.txt` / `setup.py` 把 PyTorch 锁死成 **`torch==1.13.1`**（默认 cu117，2022 年的构建）。而你的 4060 是 **Ada Lovelace 架构，算力 sm_89**。
+不管以后遇到什么 Python 库，开局都问同样六个问题、去同样几个地方找答案：
 
-关键事实：**CUDA 11.7（cu117）里没有为 sm_89 预编译的计算核 (kernel)**。后果是——`torch.cuda.is_available()` 可能返回 `True`（骗过你），但一做真正的矩阵乘法就抛：
+| 看哪里 | 回答什么问题 | 在哪打开 |
+|---|---|---|
+| **README** | 这库是干嘛的？怎么装？怎么用？有没有已知坑？怎么引用？ | 仓库首页会自动显示；或根目录 `README.md` |
+| **依赖文件** | 依赖哪些包、锁死了哪些版本？支持哪个 Python？ | `requirements.txt` / `setup.py`（`install_requires`）/ `environment.yml` / `pyproject.toml` |
+| **文档 (docs)** | 有没有教程、API 说明、入门例子？ | `docs/` 目录 或 README 里的 readthedocs 链接 |
+| **源码（包目录）** | 核心类叫什么、怎么调、默认参数多少、有哪些关键方法？ | 包目录下的 `.py`；从 `__init__.py` 找它导出了什么 |
+| **Issues / Changelog** | 别人踩过什么坑？最近改了什么？ | GitHub 的 Issues 标签页 / README 的 Change Log / `CHANGELOG` |
+| **你自己的硬件/系统** | 这库（尤其锁定的深度学习版本）能在我的机器上跑吗？ | 交叉核对：你的 GPU 算力 ↔ 它要求的 CUDA（见 §4.3） |
 
-```
-RuntimeError: CUDA error: CUBLAS_STATUS_INVALID_VALUE ...
-```
+**怎么在源码里"找东西"（三种办法，任选）**：
 
-这正是仓库 README "Common Issues" 里的第一条。**支持 Ada 的最低 CUDA 是 11.8（cu118）**，所以我们把 PyTorch 换成 `2.0.1 + cu118`。
+1. **在 GitHub 上浏览**（对新手最省事）：打开仓库页，直接点开文件；按键盘 `t` 可模糊搜文件名，`.` 可在浏览器里打开 VSCode 网页版全局搜索。
+2. **本地看**（你 §6 步骤 2 会 clone 下来）：用 VSCode 打开文件夹，`Ctrl+Shift+F` 全局搜索关键字。
+3. **命令行搜**：Windows 用 `findstr /s /n "关键字" *.py`（相当于搜索），Linux/Mac 用 `grep -rn "关键字"`。
 
-> **为什么用 2.0.1 而不是更旧/更新**：torch 2.0.1 的 cu118 构建同时支持 Python 3.8（本仓库要求）和 sm_89。而且军师已通读源码，确认 **scAtlasVAE 没有用任何 torch 2.x 已删除的 API**，从 1.13 升到 2.0.1 是平滑的，不会引入新问题。
-
-本阶段还有另外两个"军师提前排好的坑"（步骤里会用到）：
-
-- **坑 A（`--no-deps`）**：`setup.py` 锁了 `torch==1.13.1`。如果直接 `pip install -e .`，pip 会为了满足这个约束，把你刚装好的新 torch **又降回 1.13.1**。所以要先把依赖装齐，再用 `pip install -e . --no-deps` 装本体（只装它自己、不动依赖）。
-- **坑 B（`chunked_anndata` 补丁）**：源码顶部 `import chunked_anndata`（依赖 `tensorstore`，在 Windows + Python 3.8 上常常没有预编译包、装不上）。但军师核实过：它只在"分块读取超大图谱"的路径里才真正用到，我们用 11 万细胞的**内存加载**方式**完全用不到它**。所以打一个 3 行小补丁把这个 import 变成"可选"，彻底绕开 tensorstore。
+> **心态**：你不需要读懂整个仓库。**带着上面六个问题去"定点侦查"**，找到答案就走——这正是我给你整理这些报告时做的事。
 
 ---
 
-## 5. 操作步骤
+## 4. 实战：用这套方法侦查 scAtlasVAE（每条都含"怎么找到的"）
 
-> 在 **Anaconda Prompt**（开始菜单可搜到）里执行 conda/pip 命令；`nvidia-smi` 用普通 PowerShell 也行。
+下面每一小节都是同一个套路：**为什么找 → 去哪找 → 怎么找（你可自己动手） → 找到什么 → 结论**。仓库地址：https://github.com/WanluLiuLab/scAtlasVAE 。
+
+### 4.1 它是干嘛的 / 怎么装 / 有没有已知坑 —— 看 README
+
+- **为什么找**：README 是一个库的"说明书"，开局第一份必读。
+- **去哪 / 怎么找**：打开仓库首页往下滚（首页展示的就是 `README.md`）。
+- **找到什么**：① 一句话定位——"用于 atlas 级大规模 scRNA-seq 数据整合与查询数据迁移"；② 安装方式——`conda env create -f environment.yml`、`pip3 install scatlasvae`，装 PyTorch 用的是 `torch==1.13.1+cu117`；③ 一节 **"Common Issues"**，里面第一条正是 `CUDA error: CUBLAS_STATUS_INVALID_VALUE`，第二条是 `fit()` 出 `nan`；④ 作者说测试过的显卡是 **2080Ti / 3090Ti / A10 / A100 / A800**——注意**没有 40 系**。
+- **结论**：这库是做单细胞整合的；官方装法把 PyTorch 锁在 `cu117`；README 自己就埋了 cuBLAS 报错的提示。"没测过 40 系" + "cuBLAS 报错" 是我们后面要换 PyTorch 的**第一条线索**。
+
+### 4.2 它锁死了哪些版本 / 支持哪个 Python —— 看依赖文件
+
+- **为什么找**：依赖的版本决定环境怎么建、会不会和你的硬件或别的包冲突。
+- **去哪 / 怎么找**：打开根目录的 `requirements.txt`、`setup.py`（看里面的 `install_requires`）、`environment.yml`。
+- **找到什么**：`torch==1.13.1`、`torchvision==0.14.1`；`python=3.8`；`scanpy==1.8.1`、`numpy==1.21.6`、`numba==0.57.1`、`scikit-learn==0.24.1`…；`environment.yml` 里带 `--extra-index-url https://download.pytorch.org/whl/cu117`。
+- **结论**：这是一套 **2022 年的旧依赖栈**，而且 **PyTorch 被死锁在 1.13.1（cu117）**。先把"torch 被锁在 cu117"这个事实记下，去 §4.3 判断它跟你的显卡冲不冲突。
+
+### 4.3 它能在我的 4060 上跑吗 —— 交叉核对（这一步最能学到东西）
+
+- **为什么找**：**库锁定的 PyTorch 版本，不一定支持你的新显卡。** 必须交叉核对两件事：你的 GPU 需要多高的 CUDA、这个 torch 提供多高的 CUDA。
+- **怎么查"你的 GPU 需要什么"**：
+  1. 查你 GPU 的**算力 (compute capability)**：RTX 4060 属于 **Ada Lovelace** 架构，算力 **sm_89**。去哪查——NVIDIA 官方 [CUDA GPUs 页](https://developer.nvidia.com/cuda-gpus)，或直接搜 `RTX 4060 compute capability`。
+  2. 查"支持 sm_89 的最低 CUDA"：**Ada / sm_89 需要 CUDA ≥ 11.8**。去哪查——搜 `Ada Lovelace CUDA 11.8 sm_89`，或看 PyTorch/NVIDIA 的 release notes。
+- **怎么查"这个 torch 提供什么"**：§4.2 已知它锁 `torch 1.13.1`，默认构建是 **cu117（CUDA 11.7）**，而 **cu117 最高只预编译到 sm_86**，没有 sm_89 的计算核。
+- **结论**：`cu117 (11.7) < 11.8` → **不支持 4060** → 一做 GPU 矩阵乘法就会抛 `CUBLAS_STATUS_INVALID_VALUE`（正好对上 §4.1 README 里那条 Common Issues）。所以**必须把 PyTorch 换成 cu118 的构建**（我们用 `torch==2.0.1+cu118`）。这条完整推理链，就是"否掉 README 装法、改用 cu118"的依据。
+- **装完怎么当场验证**：`torch.cuda.get_device_capability()` 应返回 `(8, 9)`（即 sm_89）；再跑一次 GPU 矩阵乘法看报不报错——这就是 §6 步骤 5 的冒烟测试。
+
+### 4.4 入口 API 与默认超参 —— 读源码里的类定义
+
+- **为什么找**：要用这个库，得知道**入口类叫什么、怎么调、默认值是多少**（深度学习库的默认值往往就是论文用的超参，阶段 3 手写要对照）。
+- **怎么找（顺藤摸瓜）**：
+  1. 打开 `scatlasvae/__init__.py` → 看到它 `from . import model`；
+  2. 打开 `scatlasvae/model/__init__.py` → 看到 `from ._gex_model import scAtlasVAE`——**核心文件就是 `_gex_model.py`**；
+  3. 在 `_gex_model.py` 里搜 `class scAtlasVAE`、`def __init__`、`def fit`、`def get_latent`，读它们的参数默认值。（GitHub 按 `t` 搜文件、文件内 `Ctrl/Cmd+F`；本地 `findstr /n "def fit" _gex_model.py`。）
+- **找到什么**：构造函数是 **keyword-only**（`def __init__(self, *, adata=..., batch_key=..., label_key=...)`——所以必须写 `adata=adata`）；默认 `reconstruction_method='zinb'`、`n_latent=10`、`hidden=[128]`、`batch_hidden_dim=8`；`fit` 默认 `lr=5e-5`、`batch_size=128`、`random_seed=12`、`max_epoch=min(round(20000/N×400), 400)`；取隐向量用 `get_latent_embedding()`。
+- **结论**：这些就是冒烟测试脚本和阶段 3 手写对照要用的 API 与默认超参——全是从源码**读**出来的，不是背来的。你自己也能这样读任何库的入口类。
+
+### 4.5 有没有会卡安装的隐藏依赖 —— 搜源码的 import
+
+- **为什么找**：有些库在源码顶部 `import` 一些非标准包，`pip` 装本体时可能带不全、或在你的系统根本装不上，导致 `import` 就崩。提前扫一遍能防患未然。
+- **怎么找**：在源码里搜行首的 `import` / `from`，特别留意不认识的名字。这里在 `_gex_model.py:17` 搜到 `import chunked_anndata`；再搜它实际在哪用（搜 `ca.`），发现只在"分块读取超大数据"的分支里出现。
+- **结论**：我们用**内存加载**（`adata=...`）根本走不到那些代码，而它依赖的 `tensorstore` 在 Windows + py3.8 上常常装不上——所以把这行 `import` 改成**可选**（try/except 置空），彻底绕开（见 §6 步骤 7）。
+
+> 到这里，你已经把 §6 里每一步"为什么这么做"的来龙去脉都侦查清楚了。下面才是动手。
+
+---
+
+## 5. 会遇到的工具（包速览）
+
+> **包速览 — conda**：环境与包管理器。核心是**环境隔离**——为不同项目建互不干扰的"沙盒"。我们用它建一个 `python=3.8` 的干净环境。
+
+> **包速览 — pip**：Python 官方装包工具。conda 建好环境后，具体的库大多用 pip 装（尤其 PyTorch 的 CUDA 版）。
+
+> **包速览 — NVIDIA 驱动 / CUDA**：**驱动**让系统能驱动显卡；**CUDA** 是在 GPU 上做通用计算的平台。`nvidia-smi` 右上角的 `CUDA Version` 是**驱动支持的最高 CUDA**（向下兼容），不是你必须用它。PyTorch 的 GPU 版**自带**它需要的 CUDA 运行时，只要驱动 ≥ 它需要的即可。
+
+> **包速览 — PyTorch**：深度学习框架。GPU 版本按 CUDA 版本区分（`cu117`、`cu118`…）——**选错显卡就用不了**，这正是 §4.3 的核心。
+
+---
+
+## 6. 动手：搭建环境（在 Anaconda Prompt 里执行）
+
+下面每一步都是 §4 侦查结论的"落地"。命令照抄即可；`nvidia-smi` 用普通 PowerShell 也行。
 
 ### 步骤 0 · 前置检查
 
@@ -73,118 +121,96 @@ nvidia-smi
 conda --version
 ```
 
-**预期 / 讲解**：
-- `nvidia-smi` 显示显卡型号、驱动版本、右上角 `CUDA Version`。只要 `CUDA Version ≥ 11.8`，cu118 就能用。
-- `conda --version` 打印版本号即表示已装；报"不是内部或外部命令"则需先做步骤 1。
+**预期**：`nvidia-smi` 显示显卡、驱动、右上角 `CUDA Version`（只要 ≥ 11.8 即可用 cu118）；`conda --version` 打印版本号即已装。
 
 **本机实测记录（2026-07-03）**：
 ```
-GPU = RTX 4060 Laptop（8GB, Ada/sm_89）   驱动 = 595.97   CUDA Version = 13.2  → 远高于 cu118 所需，稳
+GPU = RTX 4060 Laptop（8GB, Ada/sm_89）   驱动 = 595.97   CUDA Version = 13.2  → 远高于 cu118 所需
 conda 24.11.3（已装好，步骤 1 跳过）
 ```
 
 ### 步骤 1 · 安装 Miniconda（若步骤 0 显示没装）
 
-本机已装 `conda 24.11.3`，**本步骤跳过**。（若你在别的机器上从零开始：从 https://docs.conda.io/en/latest/miniconda.html 下载 Windows 64-bit 安装包，一路默认安装，然后从开始菜单打开 Anaconda Prompt。）
+本机已装 `conda 24.11.3`，**跳过**。（从零开始的话：到 https://docs.conda.io/en/latest/miniconda.html 下 Windows 64-bit 安装包，一路默认，然后从开始菜单开 Anaconda Prompt。）
 
-### 步骤 2 · 克隆 scAtlasVAE 源码
-
-**目的**：拿到源码。我们用"可编辑安装"，这样你能随时读/改源码——阶段 3 手写 VAE 时要频繁对照它。
+### 步骤 2 · 克隆源码（也方便你按 §3/§4 亲手侦查）
 
 ```powershell
 git clone https://github.com/WanluLiuLab/scAtlasVAE.git
 cd scAtlasVAE
 ```
 
-> **常见坑**：若提示 `git 不是内部或外部命令`——装 [Git for Windows](https://git-scm.com/download/win) 后重开 Anaconda Prompt；或网页点 `Code → Download ZIP` 解压后 `cd` 进去。
+> 没装 git？装 [Git for Windows](https://git-scm.com/download/win) 后重开 Anaconda Prompt；或网页 `Code → Download ZIP` 解压后 `cd` 进去。
 
-### 步骤 3 · 创建并激活训练环境
-
-**目的**：建一个隔离的 Python 3.8 沙盒，之后所有操作都在里面进行。
+### 步骤 3 · 建并激活训练环境（Python 3.8，依据 §4.2）
 
 ```powershell
 conda create -n scatlasvae python=3.8 -y
 conda activate scatlasvae
 ```
 
-**预期**：激活后命令行前缀从 `(base)` 变成 `(scatlasvae)`。**此后所有 pip 命令都要在这个前缀下执行。**
+**预期**：命令行前缀从 `(base)` 变成 `(scatlasvae)`。此后所有 pip 命令都在这个前缀下执行。
 
-### 步骤 4 · 先装支持 4060 的 PyTorch（cu118）
-
-**目的**：装对显卡能用的 PyTorch。**顺序很重要——先装它**，后面装依赖时才不会被牵连降级。
+### 步骤 4 · 装支持 4060 的 PyTorch（cu118，依据 §4.3；先装它）
 
 ```powershell
 pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
 ```
 
-**讲解**：`--index-url .../cu118` 指定从 PyTorch 的 cu118 专用源下载。约 2GB，稍慢。装完先别急着装别的，先做步骤 5 验证。
+约 2GB，稍慢。装完先做步骤 5 验证，别急着装别的。
 
 ### 步骤 5 · CUDA 冒烟测试（关键检查点，必须通过）
 
-**目的**：在装其他任何东西之前，先证明"PyTorch + 4060"这一层是通的。
-
 ```powershell
-python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); x=torch.randn(2048,2048,device='cuda'); print('matmul OK:', float((x@x).mean())); print(torch.cuda.get_device_name(0))"
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); print('算力=', torch.cuda.get_device_capability()); x=torch.randn(2048,2048,device='cuda'); print('matmul OK:', float((x@x).mean())); print(torch.cuda.get_device_name(0))"
 ```
 
-**预期**：打印类似 `2.0.1+cu118 11.8 True` → `matmul OK: ...` → `NVIDIA GeForce RTX 4060 ...`，且**不报 cuBLAS 错**。
+**预期**：`2.0.1+cu118 11.8 True` → `算力= (8, 9)`（正是 §4.3 说的 sm_89）→ `matmul OK: ...` → `NVIDIA GeForce RTX 4060 ...`，且**不报 cuBLAS 错**。
 
-> **讲解**：那句 `x @ x`（矩阵乘法）会真正调用 cuBLAS 库——如果 PyTorch 装成了不支持 sm_89 的 cu117，这一步就会抛 `CUBLAS_STATUS_INVALID_VALUE`。能过，就说明 PyTorch 换对了。
-
-> **常见坑**：这里报 `CUBLAS_STATUS_INVALID_VALUE` 或 `sm_89 is not compatible` → PyTorch 没装成 cu118。停下贴报错，别继续。
+> **常见坑**：这里报 `CUBLAS_STATUS_INVALID_VALUE` 或 `sm_89 is not compatible` → torch 没装成 cu118，停下贴报错。
 
 **记录区**：
 ```
-torch 版本/CUDA/可用：______
-matmul：______   GPU：______
+torch/CUDA/可用：______   算力：______   matmul：______   GPU：______
 ```
 
-### 步骤 6 · 安装其余依赖
-
-**目的**：按仓库要求的版本装齐科学计算依赖（不含 torch，不含 tensorstore）。
+### 步骤 6 · 装其余依赖（版本依据 §4.2，不含 torch、不含 tensorstore）
 
 ```powershell
 pip install "anndata==0.8.0" "scanpy==1.8.1" "scirpy==0.10.1" "numpy==1.21.6" "numba==0.57.1" "scikit-learn==0.24.1" "umap-learn==0.5.1" "einops==0.4.1" "seaborn==0.12.2" "pandas==1.4.2" "matplotlib==3.5.2" "biopython==1.79" "tabulate==0.9.0" "plotly==5.10.0"
 ```
 
-> **常见坑**：若某个包报"无法编译 / 没有 wheel"（Windows 上偶发），把报错贴给军师，换成 conda-forge 预编译版或放宽版本——不要自己硬刚版本号。
+> **常见坑**：若某包报"无法编译 / 没有 wheel"，贴报错给我，换 conda-forge 版或放宽版本——别自己硬刚。
 
-### 步骤 7 · 给 `chunked_anndata` 打补丁（坑 B）
+### 步骤 7 · 给 `chunked_anndata` 打补丁（依据 §4.5）
 
-**目的**：把源码顶部那个会依赖 tensorstore 的硬导入，改成"装不上就跳过"的可选导入。
-
-在 `scAtlasVAE` 仓库根目录（`(scatlasvae)` 已激活）执行：
+在 `scAtlasVAE` 仓库根目录执行（把 §4.5 那行硬导入改成可选）：
 
 ```powershell
 python -c "import pathlib; p=pathlib.Path('scatlasvae/model/_gex_model.py'); s=p.read_text(encoding='utf-8'); s=s.replace('import chunked_anndata as ca', 'try:\n    import chunked_anndata as ca\nexcept ModuleNotFoundError:\n    ca = None  # 仅 chunked_adata_path 路径用到；in-memory 工作流不需要', 1); p.write_text(s, encoding='utf-8'); print('patched OK')"
 ```
 
-**预期**：打印 `patched OK`。（这条命令做的事等价于：把 `import chunked_anndata as ca` 这一行改成 `try/except` 包裹的版本。军师已在源码副本上验证过它不会破坏语法。）
+**预期**：打印 `patched OK`。
 
-### 步骤 8 · 安装 scAtlasVAE 本体（`--no-deps`，坑 A）
+### 步骤 8 · 装 scAtlasVAE 本体（`--no-deps`）
 
-**目的**：装模型本体，且**不让它把 torch 降回 1.13.1**。
+**为什么加 `--no-deps`**：§4.2 查到 `setup.py` 锁了 `torch==1.13.1`；若直接 `pip install -e .`，pip 会为满足它把你刚装的新 torch 又降回去。`--no-deps` 表示"只装它自己、不动依赖"（依赖我们已在步骤 4、6 亲手装好）。
 
 ```powershell
 pip install -e . --no-deps
 ```
 
-**讲解**：`-e` 是"可编辑安装"（源码改动即时生效）；`--no-deps` 表示"只装它自己，不碰依赖"——因为依赖我们已在步骤 4、6 亲手装好、版本可控。
-
 ### 步骤 9 · 跑完整冒烟测试（本阶段收尾）
 
-**目的**：用一份极小的合成数据，验证"环境 + GPU + 模型训练 + 取 latent"整条链路。
-
-把军师写的 [`scripts/phase1_smoke_test.py`](../scripts/phase1_smoke_test.py) 拷到本机运行：
+把 [`scripts/phase1_smoke_test.py`](../scripts/phase1_smoke_test.py) 拷到本机运行：
 
 ```powershell
 python phase1_smoke_test.py
 ```
 
-**预期**：依次打印 `[1/4]`~`[4/4]`，最后出现
-`冒烟测试全部通过：环境 + GPU + 模型训练链路完全 OK`。
+**预期**：依次打印 `[1/4]`~`[4/4]`，最后出现 `冒烟测试全部通过：环境 + GPU + 模型训练链路完全 OK`。
 
-> **常见坑**：若 `import scatlasvae` 报 `No module named 'xxx'`——多半是某个小依赖漏装，一条 `pip install xxx` 补上即可，并告诉军师。
+> **常见坑**：`import scatlasvae` 报 `No module named 'xxx'` → 某小依赖漏装，`pip install xxx` 补上并告诉我。
 
 **记录区**：
 ```
@@ -194,27 +220,30 @@ ______
 
 ---
 
-## 6. 检查点与完成标准（DoD）
+## 7. 检查点与完成标准（DoD）
 
-同时满足即算阶段一完成，可进入阶段二：
-
-- [ ] 步骤 5：`torch.cuda.is_available()` 为 `True`，GPU 矩阵乘法不报 cuBLAS 错
-- [ ] 步骤 9：`import scatlasvae` 成功，且合成数据能 `fit()` 并 `get_latent_embedding()` 得到 `(512, 10)` 的 latent
+- [ ] 步骤 5：`torch.cuda.is_available()` 为 `True`、算力 `(8,9)`、GPU 矩阵乘法不报 cuBLAS 错
+- [ ] 步骤 9：`import scatlasvae` 成功，合成数据能 `fit()` 并 `get_latent_embedding()` 得到 `(512, 10)` 的 latent
 
 ---
 
-## 7. 自测题（能答上说明这一阶段真的懂了）
+## 8. 自测题（这一阶段真学到了才答得上）
 
-1. 为什么 4060 不能用仓库锁定的 `torch==1.13.1(cu117)`？换成 cu118 解决了什么？
-2. `nvidia-smi` 显示 `CUDA Version 13.2`，这是否意味着我必须装 CUDA 13.2 的 PyTorch？为什么？
-3. 为什么要先装 PyTorch、最后再用 `--no-deps` 装 scAtlasVAE 本体？
-4. `chunked_anndata` 的补丁绕过了什么？我们为什么可以安全地绕过它？
+**关于"摸清一个库"的能力：**
+1. 拿到一个陌生 Python 库，你会先看哪几个地方、各自回答什么问题？
+2. 不看这份报告，你会**去哪、用什么操作**查到 scAtlasVAE 的 `batch_size` 默认值？查到 torch 的版本约束？
+3. 怎么判断"一个库锁定的 PyTorch 能不能在我的显卡上跑"？需要交叉核对哪两个信息？
+
+**关于环境本身：**
+4. 为什么 4060 不能用仓库锁的 `torch==1.13.1(cu117)`？换 cu118 解决了什么？
+5. `nvidia-smi` 显示 `CUDA Version 13.2`，是否意味着必须装 CUDA 13.2 的 PyTorch？为什么？
+6. 为什么先装 PyTorch、最后再用 `--no-deps` 装本体？`chunked_anndata` 补丁绕过了什么、为什么能安全绕过？
 
 ---
 
-## 8. 附录 · 评测环境 B（阶段二才用，可先跳过）
+## 9. 附录 · 评测环境 B（阶段二才用，可先跳过）
 
-评测用的 `scib-metrics` 要 Python ≥ 3.10，与训练环境（3.8）冲突，所以**单独建一个环境**。阶段二开始时再细化，这里先知道有这么回事：
+评测用的 `scib-metrics` 要 Python ≥ 3.10，与训练环境（3.8）冲突，所以**单独建一个环境**：
 
 ```powershell
 conda create -n scib python=3.10 -y
@@ -224,17 +253,29 @@ pip install scib-metrics scanpy scvi-tools
 
 ---
 
-## 9. 延伸阅读
+## 10. 常见报错速查
 
-- PyTorch 本地安装（按 CUDA 版本选）：https://pytorch.org/get-started/locally/
-- NVIDIA 各 GPU 的算力（compute capability）对照：https://developer.nvidia.com/cuda-gpus
-- conda 环境管理入门：https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
-- 仓库 README 的 Common Issues：https://github.com/WanluLiuLab/scAtlasVAE
+| 报错 | 原因 | 处理 |
+|---|---|---|
+| `CUBLAS_STATUS_INVALID_VALUE` / `sm_89 is not compatible` | torch 还是 cu117 | 重装 cu118 版 torch（步骤 4） |
+| `import scatlasvae` → `No module named chunked_anndata` | 没打步骤 7 补丁 | 执行步骤 7 |
+| `import scatlasvae` → `No module named 'xxx'` | 某依赖漏装 | `pip install xxx`，并告诉我 |
+| `fit()` 出 `nan` | 有细胞 total-count=0 / 学习率偏大 | 确保每细胞 count>0；`fit(lr=1e-5)` |
+| 装包报 `Microsoft Visual C++ 14.0 required` | 某包要现编译 | 贴给我，换 conda-forge 预编译版 |
 
 ---
 
-## 10. 阶段一小结（跑通后补）
+## 11. 延伸阅读
+
+- 如何读源码/上手一个库的通用思路：先 README → 依赖 → 文档 → 入口类 → Issues（本报告 §3 就是这套）
+- PyTorch 本地安装（按 CUDA 选版本）：https://pytorch.org/get-started/locally/
+- NVIDIA 各 GPU 算力对照：https://developer.nvidia.com/cuda-gpus
+- conda 环境管理：https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
+
+---
+
+## 12. 阶段一小结（跑通后补）
 
 - 最终环境：`scatlasvae`（py3.8, torch 2.0.1+cu118, scAtlasVAE 可编辑安装）
-- 三处关键改动：① torch 换 cu118；② `--no-deps` 装本体；③ `chunked_anndata` 补丁
+- 侦查得到并据此处理的三处：① torch 换 cu118（§4.3）；② `--no-deps` 装本体（§4.2）；③ `chunked_anndata` 补丁（§4.5）
 - 冒烟测试结果：______
