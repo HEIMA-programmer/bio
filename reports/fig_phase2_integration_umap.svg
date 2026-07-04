@@ -1,0 +1,33 @@
+<svg width="680" height="380" viewBox="0 0 680 380" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, Arial, sans-serif">
+<title>整合前后 UMAP 示意</title>
+<desc>左：整合前，细胞按批次各自成群（批次效应）；右：整合后，各批次在每个细胞类型簇内充分混合。点的颜色代表批次。示意图。</desc>
+<rect x="0" y="0" width="680" height="380" fill="#ffffff"/>
+<text x="340" y="26" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2328">整合前 vs 整合后（点的颜色 = 批次）</text>
+
+<!-- 左：整合前 -->
+<text x="172" y="50" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">整合前：批次各自成群（差）</text>
+<rect x="24" y="60" width="296" height="250" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<g>
+<circle cx="90" cy="140" r="4.5" fill="#2f6feb"/><circle cx="120" cy="138" r="4.5" fill="#2f6feb"/><circle cx="100" cy="162" r="4.5" fill="#2f6feb"/><circle cx="128" cy="158" r="4.5" fill="#2f6feb"/><circle cx="85" cy="158" r="4.5" fill="#2f6feb"/><circle cx="112" cy="150" r="4.5" fill="#2f6feb"/><circle cx="135" cy="142" r="4.5" fill="#2f6feb"/>
+<circle cx="232" cy="123" r="4.5" fill="#e8890c"/><circle cx="258" cy="128" r="4.5" fill="#e8890c"/><circle cx="240" cy="148" r="4.5" fill="#e8890c"/><circle cx="266" cy="145" r="4.5" fill="#e8890c"/><circle cx="224" cy="140" r="4.5" fill="#e8890c"/><circle cx="250" cy="138" r="4.5" fill="#e8890c"/>
+<circle cx="150" cy="245" r="4.5" fill="#2ea043"/><circle cx="178" cy="248" r="4.5" fill="#2ea043"/><circle cx="158" cy="268" r="4.5" fill="#2ea043"/><circle cx="184" cy="262" r="4.5" fill="#2ea043"/><circle cx="145" cy="260" r="4.5" fill="#2ea043"/><circle cx="170" cy="255" r="4.5" fill="#2ea043"/>
+</g>
+<text x="172" y="300" text-anchor="middle" font-size="12" fill="#57606a">同类细胞被批次拆开 → 批次效应未去除</text>
+
+<!-- 右：整合后 -->
+<text x="508" y="50" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">整合后：批次混合、类型分开（好）</text>
+<rect x="360" y="60" width="296" height="250" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<g>
+<circle cx="432" cy="140" r="4.5" fill="#2f6feb"/><circle cx="458" cy="138" r="4.5" fill="#e8890c"/><circle cx="442" cy="162" r="4.5" fill="#2ea043"/><circle cx="465" cy="158" r="4.5" fill="#2f6feb"/><circle cx="428" cy="152" r="4.5" fill="#e8890c"/><circle cx="452" cy="150" r="4.5" fill="#2ea043"/>
+<circle cx="572" cy="138" r="4.5" fill="#e8890c"/><circle cx="596" cy="142" r="4.5" fill="#2ea043"/><circle cx="580" cy="162" r="4.5" fill="#2f6feb"/><circle cx="602" cy="155" r="4.5" fill="#e8890c"/><circle cx="568" cy="150" r="4.5" fill="#2ea043"/><circle cx="590" cy="148" r="4.5" fill="#2f6feb"/>
+<circle cx="500" cy="248" r="4.5" fill="#2ea043"/><circle cx="526" cy="252" r="4.5" fill="#2f6feb"/><circle cx="508" cy="270" r="4.5" fill="#e8890c"/><circle cx="532" cy="264" r="4.5" fill="#2ea043"/><circle cx="496" cy="262" r="4.5" fill="#2f6feb"/><circle cx="520" cy="258" r="4.5" fill="#e8890c"/>
+</g>
+<text x="508" y="300" text-anchor="middle" font-size="12" fill="#57606a">每个类型簇内各批次混合 → 批次被校正</text>
+
+<!-- 图例 -->
+<g font-size="12" fill="#57606a">
+<circle cx="210" cy="352" r="5" fill="#2f6feb"/><text x="220" y="356">批次 A</text>
+<circle cx="300" cy="352" r="5" fill="#e8890c"/><text x="310" y="356">批次 B</text>
+<circle cx="390" cy="352" r="5" fill="#2ea043"/><text x="400" y="356">批次 C</text>
+</g>
+</svg>
