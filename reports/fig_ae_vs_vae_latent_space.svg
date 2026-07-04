@@ -1,0 +1,41 @@
+<svg width="680" height="360" viewBox="0 0 680 360" role="img" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, Arial, sans-serif">
+<title>AE 与 VAE 潜空间对比</title>
+<desc>左：AE 把每个细胞压成孤立的点，点之间有空洞，新细胞可能落进乱码区；右：VAE 把每个细胞压成高斯云并用 KL 收拢，云互相重叠填满中心的有界区域，处处有意义。</desc>
+<rect x="0" y="0" width="680" height="360" fill="#ffffff"/>
+
+<text x="340" y="27" text-anchor="middle" font-size="15" font-weight="600" fill="#1f2328">同一个潜空间：AE 留洞　vs　VAE 填满</text>
+
+<!-- 左：AE -->
+<text x="172" y="49" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">AE：每个细胞 = 一个点</text>
+<rect x="24" y="58" width="296" height="252" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<circle cx="64" cy="112" r="4" fill="#2f6feb"/>
+<circle cx="108" cy="102" r="4" fill="#2f6feb"/>
+<circle cx="90" cy="158" r="4" fill="#2f6feb"/>
+<circle cx="152" cy="118" r="4" fill="#2f6feb"/>
+<circle cx="258" cy="106" r="4" fill="#2f6feb"/>
+<circle cx="288" cy="158" r="4" fill="#2f6feb"/>
+<circle cx="74" cy="252" r="4" fill="#2f6feb"/>
+<circle cx="128" cy="296" r="4" fill="#2f6feb"/>
+<circle cx="278" cy="288" r="4" fill="#2f6feb"/>
+<circle cx="300" cy="232" r="4" fill="#2f6feb"/>
+<circle cx="196" cy="210" r="28" fill="none" stroke="#9aa4af" stroke-dasharray="4 4"/>
+<text x="196" y="216" text-anchor="middle" font-size="16" fill="#9aa4af">?</text>
+<text x="172" y="335" text-anchor="middle" font-size="12" fill="#57606a">点之间有空洞：新细胞可能落进乱码区</text>
+
+<!-- 右：VAE -->
+<text x="508" y="49" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">VAE：每个细胞 = 一团云</text>
+<rect x="360" y="58" width="296" height="252" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+<circle cx="508" cy="192" r="96" fill="none" stroke="#9aa4af" stroke-dasharray="5 5" opacity="0.7"/>
+<text x="508" y="85" text-anchor="middle" font-size="12" fill="#57606a">N(0, I) 规整区域</text>
+<g fill="#2f6feb">
+<circle cx="508" cy="192" r="26" fill-opacity="0.12"/><circle cx="508" cy="192" r="15" fill-opacity="0.24"/><circle cx="508" cy="192" r="3.4" fill-opacity="0.95"/>
+<circle cx="470" cy="168" r="26" fill-opacity="0.12"/><circle cx="470" cy="168" r="15" fill-opacity="0.24"/><circle cx="470" cy="168" r="3.4" fill-opacity="0.95"/>
+<circle cx="548" cy="172" r="26" fill-opacity="0.12"/><circle cx="548" cy="172" r="15" fill-opacity="0.24"/><circle cx="548" cy="172" r="3.4" fill-opacity="0.95"/>
+<circle cx="482" cy="220" r="26" fill-opacity="0.12"/><circle cx="482" cy="220" r="15" fill-opacity="0.24"/><circle cx="482" cy="220" r="3.4" fill-opacity="0.95"/>
+<circle cx="544" cy="218" r="26" fill-opacity="0.12"/><circle cx="544" cy="218" r="15" fill-opacity="0.24"/><circle cx="544" cy="218" r="3.4" fill-opacity="0.95"/>
+<circle cx="508" cy="150" r="26" fill-opacity="0.12"/><circle cx="508" cy="150" r="15" fill-opacity="0.24"/><circle cx="508" cy="150" r="3.4" fill-opacity="0.95"/>
+<circle cx="508" cy="238" r="26" fill-opacity="0.12"/><circle cx="508" cy="238" r="15" fill-opacity="0.24"/><circle cx="508" cy="238" r="3.4" fill-opacity="0.95"/>
+<circle cx="456" cy="198" r="26" fill-opacity="0.12"/><circle cx="456" cy="198" r="15" fill-opacity="0.24"/><circle cx="456" cy="198" r="3.4" fill-opacity="0.95"/>
+</g>
+<text x="508" y="335" text-anchor="middle" font-size="12" fill="#57606a">云重叠填满：处处有意义、可放新细胞</text>
+</svg>
