@@ -1,7 +1,9 @@
 # 阶段一 · 环境搭建 + 学会"摸清一个陌生库"（Windows + RTX 4060 + conda）
 
+> **阶段** 1 / 5　·　**前置**：[总纲](00_overview_and_learning_map.md)、[知识框架](01_concepts_and_toolbox.md)　·　**产出**：可训练环境 + 冒烟测试　·　**预计** 1–2 天
+> **导航**：[总纲](00_overview_and_learning_map.md)　·　[索引](README.md)　·　[阶段 2 →](phase2_integration_and_benchmark.md)
+>
 > 目标机器：本地 **RTX 4060（8GB, Ada Lovelace 架构, 算力 sm_89）**，**Windows 原生**，用 **conda** 管理环境。
-> 先读过 [`00_overview_and_learning_map.md`](00_overview_and_learning_map.md) 和 [`01_concepts_and_toolbox.md`](01_concepts_and_toolbox.md) 会更顺。
 
 ---
 

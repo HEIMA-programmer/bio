@@ -1,7 +1,10 @@
 # 复现总纲与学习地图
 
 > 这是整套复现报告的入口文件。如果你只先读一份，就读它。
-> 建议阅读顺序：**本文（总纲）→ [`01_concepts_and_toolbox.md`](01_concepts_and_toolbox.md)（搭知识框架）→ [`phase1_environment_setup.md`](phase1_environment_setup.md)（开始动手）**。
+> 建议阅读顺序：**本文（总纲）→ [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [2](phase2_integration_and_benchmark.md) → [3 ★](phase3_reimplement_vae.md) → [4](phase4_ablation_studies.md) → [5](phase5_final_report.md)**。
+> **导航**：[知识框架 →](01_concepts_and_toolbox.md)　·　[索引](README.md)
+
+![复现全流程](fig_pipeline_overview.svg)
 
 ---
 
