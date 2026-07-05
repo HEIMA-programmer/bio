@@ -1,7 +1,8 @@
 # scAtlasVAE 复现报告
 
 > **论文**：Xue, Wu, Tian *et al.* (2024) *Integrative mapping of human CD8⁺ T cells in inflammation and cancer.* **Nature Methods**. DOI: [10.1038/s41592-024-02530-0](https://doi.org/10.1038/s41592-024-02530-0)
-> **代码**：https://github.com/WanluLiuLab/scAtlasVAE　·　**文档**：https://scatlasvae.readthedocs.io/en/latest/
+> **代码**：https://github.com/WanluLiuLab/scAtlasVAE
+> **文档**：https://scatlasvae.readthedocs.io/en/latest/
 > **复现者**：HEIMA-programmer　·　**协作**：Claude Code（"军师"）
 
 一套**面向完全新手**的论文复现教学套件。它和普通教程最大的不同，是贯穿始终的一条规矩——**不直接灌结论，而是每条结论都先带你走一遍"我是怎么找到它的"**：
