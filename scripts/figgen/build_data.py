@@ -232,31 +232,34 @@ def fig_zinb_construction():
 
 # ======================================================================
 def fig_loss_and_warmup():
-    fig, axes = plt.subplots(1, 2, figsize=(10.6, 4.3), gridspec_kw={"width_ratios": [1, 1.15]})
-    # 左：三块损失的相对量级（示意）
-    comps = ["ZINB 重构", "λ_KL·KL", "λ_ct·交叉熵"]
-    mag = [1.0, 0.16, 0.22]
-    cols = [PAL["decoder"]["ink"], PAL["latent"]["ink"], PAL["cls"]["ink"]]
-    b = axes[0].barh(comps[::-1], mag[::-1], color=cols[::-1], edgecolor="white", height=0.6)
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.3), gridspec_kw={"width_ratios": [1, 1.15]})
+    # 左：几块损失的相对量级（示意；含读源码才看到的"门控稀疏"项）
+    comps = ["ZINB 重构", "λ_KL·KL", "λ_ct·交叉熵", "门控稀疏(sigmoid π)"]
+    mag = [1.0, 0.16, 0.22, 0.10]
+    cols = [PAL["decoder"]["ink"], PAL["latent"]["ink"], PAL["cls"]["ink"], PAL["batch"]["ink"]]
+    axes[0].barh(comps[::-1], mag[::-1], color=cols[::-1], edgecolor="white", height=0.62)
     axes[0].set_xlim(0, 1.15)
-    axes[0].set_title("总损失 = 三块相加（相对量级·示意）", fontsize=12, fontweight="bold", pad=8)
+    axes[0].set_title("总损失 = 几块相加（相对量级·示意）", fontsize=12, fontweight="bold", pad=8)
     axes[0].set_xlabel("相对贡献", fontsize=9.5)
     _clean(axes[0]); axes[0].grid(axis="y", visible=False)
-    # 右：warmup 真相
-    ep = np.arange(0, 401)
-    axes[1].plot(ep, np.minimum(1, ep / 400), color=PAL["loss"]["ink"], lw=2.2,
-                 label="λ_KL = min(1, epoch/400)")
-    axes[1].axvline(73, color=PAL["accentB"]["ink"], ls="--", lw=1.4)
-    axes[1].scatter([73], [73 / 400], color=PAL["accentB"]["ink"], zorder=5, s=40)
-    axes[1].annotate("11 万细胞时 max_epoch≈73\n→ λ_KL 只到 ≈0.18，从没到 1",
-                     xy=(73, 73 / 400), xytext=(120, 0.32), fontsize=9, color=PAL["accentB"]["ink"],
-                     arrowprops=dict(arrowstyle="->", color=PAL["accentB"]["ink"], lw=1.2))
-    axes[1].set_xlim(0, 400); axes[1].set_ylim(0, 1.02)
+    # 右：warmup 的**正确**故事——因 min(max_epoch,400) 截断，λ_KL 在 max_epoch 内 0→1 爬满
+    for me, c, lab in [(200, PAL["loss"]["ink"], "4 万细胞 max_epoch=200"),
+                       (73, PAL["accentB"]["ink"], "11 万细胞 max_epoch≈73")]:
+        ep = np.arange(0, me + 1)
+        axes[1].plot(ep, np.minimum(1, ep / min(me, 400)), color=c, lw=2.2,
+                     label=f"λ_KL=min(1, epoch/min(max_epoch,400))·{lab}")
+        axes[1].scatter([me], [1.0], color=c, zorder=5, s=36)
+    axes[1].annotate("关键：源码有 n_epochs_kl_warmup=min(max_epoch,400)\n"
+                     "→ 预热长度=max_epoch，λ_KL 整个训练 0→1 爬满、末轮≈1\n"
+                     "（旧图误作\"只到0.18\"，是漏读这行 min）",
+                     xy=(200, 1.0), xytext=(18, 0.42), fontsize=8.4, color=INK,
+                     arrowprops=dict(arrowstyle="->", color=MUTED, lw=1.1))
+    axes[1].set_xlim(0, 260); axes[1].set_ylim(0, 1.05)
     axes[1].set_xlabel("epoch", fontsize=10); axes[1].set_ylabel("KL 权重 λ_KL", fontsize=10)
-    axes[1].set_title("KL 预热真相（读 fit 源码才看到）", fontsize=12, fontweight="bold", pad=8)
-    axes[1].legend(fontsize=9, frameon=False, loc="lower right")
+    axes[1].set_title("KL 预热真相（读全 fit 源码才看到）", fontsize=12, fontweight="bold", pad=8)
+    axes[1].legend(fontsize=7.6, frameon=False, loc="lower right")
     _clean(axes[1])
-    _stamp(fig)
+    _stamp(fig, "左：损失量级示意 · 右：预热为真实调度公式")
     save(fig, "fig_loss_and_warmup")
 
 

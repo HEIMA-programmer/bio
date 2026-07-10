@@ -17,9 +17,12 @@ import scanpy as sc
 from scib_metrics.benchmark import Benchmarker
 
 PROC_PATH = "tcell_processed.h5ad"
-BATCH_KEY = "study_name"
+BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
-EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE"]
+# 三个对照：X_pca(未校正) / X_harmony(经典批次校正基线) / X_scAtlasVAE(本方法)。
+# 注：baseline 由 scVI 改为 Harmony——scvi-tools 在本机 Windows 装不上（orbax 长路径），
+# 见 phase2_baseline_harmony.py 的说明。scVI 的"编码器 batch-variant"架构对照仍在文档保留。
+EMBEDDINGS = ["X_pca", "X_harmony", "X_scAtlasVAE"]
 
 adata = sc.read_h5ad(PROC_PATH)
 

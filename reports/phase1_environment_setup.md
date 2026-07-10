@@ -171,10 +171,11 @@ python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda
 
 > **常见坑**：这里报 `CUBLAS_STATUS_INVALID_VALUE` 或 `sm_89 is not compatible` → torch 没装成 cu118，停下贴报错。
 
-**记录区**：
+**记录区（本机实测 2026-07-09）**：
 ```
-torch/CUDA/可用：______   算力：______   matmul：______   GPU：______
+torch/CUDA/可用：torch 2.0.1+cu118 / CUDA 11.8 / True   算力：(8, 9)   matmul：OK   GPU：NVIDIA GeForce RTX 4060 Laptop GPU
 ```
+> 本机安装小记：`download.pytorch.org` 直连一度 `Read timed out`（**网络质量问题**，与是否在国内无关）。加大 `--timeout 300 --retries 10` 后经 `--extra-index-url https://download.pytorch.org/whl/cu118` 装成；网络实在差可退到镜像 `-f https://mirrors.aliyun.com/pytorch-wheels/cu118/`。装到的是 `2.0.1+cu118`（`torch.version.cuda==11.8`），算力 `(8,9)` 正是 sm_89 —— 对上 §4.3 的推理。
 
 ### 步骤 6 · 装其余依赖（版本依据 §4.2，不含 torch、不含 tensorstore）
 
@@ -214,11 +215,15 @@ python phase1_smoke_test.py
 
 > **常见坑**：`import scatlasvae` 报 `No module named 'xxx'` → 某小依赖漏装，`pip install xxx` 补上并告诉我。
 
-**记录区**：
+**记录区（本机实测 2026-07-09）**：
 ```
-phase1_smoke_test.py 结果：[ ] 通过   [ ] 报错(贴下方)
-______
+phase1_smoke_test.py 结果：[x] 通过   [ ] 报错(贴下方)
+[1/4]~[4/4] 全过；GPU=RTX 4060 Laptop；合成数据 3 epoch 训练无 NaN，latent 形状 (512,10)；
+末行 "冒烟测试全部通过：环境 + GPU + 模型训练链路完全 OK"
 ```
+> 实跑时除 §4.5 的 `chunked_anndata` 外，还遇到**另两处**要处理（都属"库版本与本仓库假设不符"）：
+> ① `scatlasvae/preprocessing/_preprocess.py` 顶部硬 `import scirpy`（仅 TCR/VDJ 函数用到，GEX 整合不需要）——同样改成 `try/except` 置空，免装 scirpy 一堆重依赖；
+> ② `scatlasvae/utils/_utilities.py` 的 `get_default_device()` 调 `torch.mps.device_count()`，但 `torch.mps` 在 torch<2.1 不存在（我们用的 2.0.1）——加 `hasattr` 守卫即可（见 §10 报错表）。
 
 ---
 
@@ -261,6 +266,8 @@ pip install scib-metrics scanpy scvi-tools
 |---|---|---|
 | `CUBLAS_STATUS_INVALID_VALUE` / `sm_89 is not compatible` | torch 还是 cu117 | 重装 cu118 版 torch（步骤 4） |
 | `import scatlasvae` → `No module named chunked_anndata` | 没打步骤 7 补丁 | 执行步骤 7 |
+| `import scatlasvae` → `No module named 'scirpy'` | `_preprocess.py` 硬 import scirpy（TCR 依赖） | 把该行改 `try/except`（GEX 不需要），见 §9 记录区 |
+| `AttributeError: module 'torch' has no attribute 'mps'` | `get_default_device()` 调 `torch.mps`，torch<2.1 没有 | 给该调用加 `hasattr(torch,'mps')` 守卫，见 §9 记录区 |
 | `import scatlasvae` → `No module named 'xxx'` | 某依赖漏装 | `pip install xxx`，并告诉我 |
 | `fit()` 出 `nan` | 有细胞 total-count=0 / 学习率偏大 | 确保每细胞 count>0；`fit(lr=1e-5)` |
 | 装包报 `Microsoft Visual C++ 14.0 required` | 某包要现编译 | 贴给我，换 conda-forge 预编译版 |
@@ -276,8 +283,8 @@ pip install scib-metrics scanpy scvi-tools
 
 ---
 
-## 12. 阶段一小结（跑通后补）
+## 12. 阶段一小结（本机 2026-07-09 跑通）
 
-- 最终环境：`scatlasvae`（py3.8, torch 2.0.1+cu118, scAtlasVAE 可编辑安装）
-- 侦查得到并据此处理的三处：① torch 换 cu118（§4.3）；② `--no-deps` 装本体（§4.2）；③ `chunked_anndata` 补丁（§4.5）
-- 冒烟测试结果：______
+- 最终环境：`scatlasvae`（py3.8.20, torch 2.0.1+cu118, scAtlasVAE 1.0.6a3 可编辑安装），其余旧 pin 栈（scanpy 1.8.1 / anndata 0.8.0 / numpy 1.21.6 / numba 0.57.1 / scikit-learn 0.24.1 …）一次装好、无版本冲突。评测环境 `scib`（py3.10）另见 §9。
+- 侦查/实跑据此处理的**五处**（前三处纯侦查即可预判，后两处要真跑才暴露）：① torch 换 cu118（§4.3）；② `--no-deps` 装本体（§4.2）；③ `chunked_anndata` 改可选（§4.5）；④ `scirpy` 改可选（GEX 不需要 TCR 依赖）；⑤ `torch.mps` 守卫（torch 2.0.1 无 `torch.mps`）。
+- 冒烟测试结果：**全部通过**——GPU 矩阵乘不报 cuBLAS、`import scatlasvae` 成功、合成数据 `fit()` 无 NaN、`get_latent_embedding()` 得到 `(512, 10)`。

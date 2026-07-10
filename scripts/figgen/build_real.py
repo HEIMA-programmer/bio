@@ -1,0 +1,225 @@
+"""用**真实实跑结果**重绘数据图，替换 build_data.py 的「示意/预期」占位。
+
+与 build_data.py 的区别：那份用合成的示意数值、角落盖「示意」章；这份读 4060 实跑产物
+（loss npz / scib-metrics csv / 处理好的 h5ad 里的嵌入），画真图、不盖示意章。
+
+数据来源（默认在 bio/data/，可用 REAL_DATA_DIR 覆盖）：
+    phase2_scatlasvae_loss.npz      ← phase2_run_scatlasvae.py 训练时保存（loss + λ_KL）
+    phase2_benchmark_results.csv    ← phase2_benchmark_scib.py
+    phase4_ablation_results.csv     ← phase4_ablations.py
+    tcell_processed.h5ad            ← 含 obsm 各嵌入 + X_umap_*
+
+运行（在 scib 环境，需 matplotlib + 中文字体，theme.py 已处理）：
+    python build_real.py loss                     # 重绘 fig_phase2_loss_curve
+    python build_real.py bench                     # 重绘 fig_phase2_benchmark_bars
+    python build_real.py ablation                  # 重绘 fig_phase4_ablation_bars
+    python build_real.py umap_integration          # 重绘 fig_phase2_integration_umap
+    python build_real.py umap_compare              # 重绘 fig_phase3_umap_compare
+    python build_real.py all
+"""
+import os
+import sys
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import theme as T
+from theme import PAL, INK, MUTED, FAINT
+
+plt.rcParams.update({
+    "axes.edgecolor": "#c4ccd8", "axes.linewidth": 1.0,
+    "axes.grid": True, "grid.color": "#eef1f6", "grid.linewidth": 1.0,
+    "xtick.color": MUTED, "ytick.color": MUTED,
+    "axes.labelcolor": INK, "text.color": INK,
+    "figure.facecolor": "white", "axes.facecolor": "white",
+})
+
+DATA_DIR = os.environ.get("REAL_DATA_DIR",
+                          os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data")))
+
+
+def _clean(ax):
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_axisbelow(True)
+
+
+def _save(fig, name):
+    svg = f"{T.REPORTS_DIR}/{name}.svg"
+    png = f"{T.PNG_DIR}/{name}.png"
+    fig.savefig(svg, format="svg", bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(png, format="png", dpi=145, bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+    print("wrote", svg)
+
+
+# ======================================================================
+def loss_curve():
+    """真实训练动态：总/重构损失下降 + λ_KL 预热 0→~1（**纠正旧稿"只到0.18"**）。"""
+    d = np.load(os.path.join(DATA_DIR, "phase2_scatlasvae_loss.npz"))
+    total = d["epoch_total_loss_list"]
+    recon = d["epoch_reconstruction_loss_list"]
+    klw = d["kl_weight"]
+    ep = np.arange(1, len(total) + 1)
+
+    fig, ax = plt.subplots(figsize=(8.8, 4.5))
+    ax.plot(ep, total, color=PAL["encoder"]["ink"], lw=2.2, label="总损失")
+    ax.plot(ep, recon, color=PAL["decoder"]["ink"], lw=1.8, ls="--", label="重构损失(ZINB)")
+    ax.set_xlabel("epoch", fontsize=10)
+    ax.set_ylabel("训练损失（每 epoch 累加）", fontsize=10)
+    ax.set_title(f"scAtlasVAE 训练损失曲线（实跑，{len(ep)} epoch）",
+                 fontsize=13, fontweight="bold", pad=10)
+
+    ax2 = ax.twinx()
+    ax2.plot(ep, klw, color=PAL["loss"]["ink"], lw=2.0, label="KL 权重 λ_KL(预热)")
+    ax2.set_ylim(0, 1.05)
+    ax2.set_ylabel("KL 权重 λ_KL", color=PAL["loss"]["ink"], fontsize=10)
+    ax2.tick_params(axis="y", colors=PAL["loss"]["ink"])
+    ax2.grid(False)
+    ax2.annotate(
+        f"λ_KL 因 min(max_epoch,400) 截断，\n整个训练 0→~1 爬满，末轮≈{klw[-1]:.2f}\n"
+        f"（旧稿误作\"只到0.18\"）",
+        xy=(ep[-1], klw[-1]), xytext=(ep[int(len(ep) * 0.12)], 0.62),
+        fontsize=8.8, color=PAL["loss"]["ink"],
+        arrowprops=dict(arrowstyle="->", color=PAL["loss"]["ink"], lw=1))
+    _clean(ax)
+    ax2.spines["top"].set_visible(False)
+    ax.legend(fontsize=9, frameon=False, loc="center right")
+    _save(fig, "fig_phase2_loss_curve")
+
+
+def _bars_from_csv(csv_name, order, title, outname, note=None):
+    """从 scib-metrics 的结果 csv 画分组条形（每个嵌入的 批次校正/生物保留/总分）。"""
+    import pandas as pd
+    df = pd.read_csv(os.path.join(DATA_DIR, csv_name), index_col=0)
+    df = df[df.index != "Metric Type"]                 # 去掉描述行
+    aggs = ["Batch correction", "Bio conservation", "Total"]
+    zh = {"Batch correction": "批次校正", "Bio conservation": "生物保留", "Total": "总分 Overall"}
+    order = [e for e in order if e in df.index]
+    mcol = [PAL["input"]["ink"], PAL["accentA"]["ink"], PAL["encoder"]["ink"],
+            PAL["cls"]["ink"], PAL["latent"]["ink"]]
+    fig, ax = plt.subplots(figsize=(9.0, 4.6))
+    x = np.arange(len(aggs)); w = 0.8 / len(order)
+    for i, emb in enumerate(order):
+        vals = [float(df.loc[emb, a]) for a in aggs]
+        b = ax.bar(x + (i - (len(order) - 1) / 2) * w, vals, w,
+                   color=mcol[i % len(mcol)], label=emb, edgecolor="white", linewidth=0.8)
+        ax.bar_label(b, fmt="%.2f", fontsize=8, color=MUTED, padding=2)
+    ax.set_xticks(x); ax.set_xticklabels([zh[a] for a in aggs], fontsize=10.5)
+    ax.set_ylim(0, max(0.7, float(df[aggs].values.max()) * 1.18))
+    ax.set_ylabel("分数（越高越好）", fontsize=10)
+    ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
+    ax.legend(fontsize=9.5, frameon=False, loc="upper left")
+    _clean(ax)
+    if note:
+        fig.text(0.5, -0.02, note, ha="center", fontsize=8.6, color=MUTED)
+    _save(fig, outname)
+
+
+def bench():
+    _bars_from_csv(
+        "phase2_benchmark_results.csv",
+        ["X_pca", "X_harmony", "X_scAtlasVAE"],
+        "整合评测：三种嵌入对比（真实，scib-metrics）",
+        "fig_phase2_benchmark_bars",
+        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看方法间相对排序。"
+             "两种校正法均 ≫ 未校正 PCA；Harmony 批次校正更强，scAtlasVAE 生物保留突出。")
+
+
+def ablation():
+    """消融两联图：左=潜维度 2/10/50，右=KL 预热 开/关；各画 批次校正/生物保留/总分。"""
+    import pandas as pd
+    df = pd.read_csv(os.path.join(DATA_DIR, "phase4_ablation_results.csv"), index_col=0)
+    df = df[df.index != "Metric Type"]
+    aggs = ["Batch correction", "Bio conservation", "Total"]
+    zh = {"Batch correction": "批次校正", "Bio conservation": "生物保留", "Total": "总分"}
+    panels = [
+        ("潜维度 n_latent", [("X_nlat2", "n=2"), ("X_nlat10", "n=10(默认)"), ("X_nlat50", "n=50")]),
+        ("KL 预热", [("X_nlat10", "有预热(0→1)"), ("X_nowarmup", "关(恒1.0)")]),
+    ]
+    mcol = [PAL["input"]["ink"], PAL["encoder"]["ink"], PAL["accentB"]["ink"]]
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6), gridspec_kw={"width_ratios": [3, 2]})
+    for ax, (ptitle, items) in zip(axes, panels):
+        items = [(k, lab) for k, lab in items if k in df.index]
+        x = np.arange(len(aggs)); w = 0.8 / max(1, len(items))
+        for i, (k, lab) in enumerate(items):
+            vals = [float(df.loc[k, a]) for a in aggs]
+            b = ax.bar(x + (i - (len(items) - 1) / 2) * w, vals, w, color=mcol[i % len(mcol)],
+                       label=lab, edgecolor="white", linewidth=0.8)
+            ax.bar_label(b, fmt="%.2f", fontsize=7.5, color=MUTED, padding=2)
+        ax.set_xticks(x); ax.set_xticklabels([zh[a] for a in aggs], fontsize=10)
+        ax.set_ylim(0, max(0.7, float(df[aggs].values.max()) * 1.18))
+        ax.set_title(ptitle, fontsize=12, fontweight="bold", pad=8)
+        ax.legend(fontsize=9, frameon=False, loc="upper left")
+        _clean(ax)
+    axes[0].set_ylabel("分数（越高越好）", fontsize=10)
+    fig.suptitle("消融：潜维度 与 KL 预热（真实，scib-metrics）", fontsize=13.5, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    _save(fig, "fig_phase4_ablation_bars")
+
+
+def _scatter_by(ax, xy, labels, title, palette=None, s=3, legend=False, max_leg=8):
+    """按类别上色的散点。labels 为分类数组。"""
+    import pandas as pd
+    cats = pd.Categorical(labels)
+    uniq = list(cats.categories)
+    cmap = plt.get_cmap("tab20" if len(uniq) > 10 else "tab10")
+    for i, c in enumerate(uniq):
+        m = cats.codes == i
+        col = (palette[i % len(palette)] if palette else cmap(i % cmap.N))
+        ax.scatter(xy[m, 0], xy[m, 1], s=s, color=col, alpha=0.6,
+                   edgecolors="none", label=str(c), rasterized=True)
+    ax.set_title(title, fontsize=10.5, color=INK, pad=6)
+    ax.set_xticks([]); ax.set_yticks([])
+    _clean(ax)
+    if legend:
+        ax.legend(loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=6.5,
+                  frameon=False, ncol=1, markerscale=2, handletextpad=0.2)
+
+
+def umap_integration():
+    """真实整合 UMAP：X_pca(未校正) vs X_scAtlasVAE(整合后)，按 batch(癌种) 与 cell_type 上色。"""
+    import scanpy as sc
+    a = sc.read_h5ad(os.path.join(DATA_DIR, "tcell_processed.h5ad"))
+    up = a.obsm["X_umap_pca"]; us = a.obsm["X_umap_scatlasvae"]
+    batch = a.obs["cancerType"].values     # 8 类，可读；作 batch/技术轴的可视化
+    ctype = a.obs["cell_type"].values      # 17 个 CD8 亚型
+    fig, ax = plt.subplots(2, 2, figsize=(11.2, 9.2))
+    _scatter_by(ax[0, 0], up, batch, "未校正 X_pca · 按癌种(batch)")
+    _scatter_by(ax[0, 1], up, ctype, "未校正 X_pca · 按细胞类型", legend=True)
+    _scatter_by(ax[1, 0], us, batch, "scAtlasVAE · 按癌种(batch)")
+    _scatter_by(ax[1, 1], us, ctype, "scAtlasVAE · 按细胞类型", legend=True)
+    fig.suptitle("整合前(上) vs 整合后(下)：批次混合↑、细胞类型仍分得开（真实结果）",
+                 fontsize=13.5, fontweight="bold", y=0.995)
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    _save(fig, "fig_phase2_integration_umap")
+
+
+def umap_compare():
+    """官方 vs 手写 VAE 的 UMAP 对照（按细胞类型上色）。"""
+    import scanpy as sc
+    a = sc.read_h5ad(os.path.join(DATA_DIR, "tcell_processed.h5ad"))
+    ctype = a.obs["cell_type"].values
+    fig, ax = plt.subplots(1, 2, figsize=(11.2, 5.0))
+    _scatter_by(ax[0], a.obsm["X_umap_official"], ctype, "官方 scAtlasVAE latent")
+    _scatter_by(ax[1], a.obsm["X_umap_mine"], ctype, "手写最小 VAE latent", legend=True)
+    fig.suptitle("官方 vs 手写 VAE：UMAP 按细胞类型上色（趋势一致即成功）",
+                 fontsize=13, fontweight="bold", y=1.0)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    _save(fig, "fig_phase3_umap_compare")
+
+
+if __name__ == "__main__":
+    targets = sys.argv[1:] or ["all"]
+    if "all" in targets:
+        targets = ["loss", "bench", "ablation", "umap_integration", "umap_compare"]
+    fns = {"loss": loss_curve, "bench": bench, "ablation": ablation,
+           "umap_integration": umap_integration, "umap_compare": umap_compare}
+    for t in targets:
+        if t in fns:
+            try:
+                fns[t]()
+            except FileNotFoundError as e:
+                print(f"[skip] {t}: 缺数据 {e}")
+        else:
+            print(f"[todo] {t}: 该图函数将在拿到对应实跑产物后补上")

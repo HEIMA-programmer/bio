@@ -8,12 +8,14 @@
     reports/phase2_integration_and_benchmark.md 步骤 4、6。
 """
 import argparse
+import numpy as np
 import scanpy as sc
 import scatlasvae
 
 PROC_PATH = "tcell_processed.h5ad"
-BATCH_KEY = "study_name"     # 与 phase2_data_download_and_qc.py 保持一致
+BATCH_KEY = "patient"        # 与 phase2_data_download_and_qc.py 保持一致
 LABEL_KEY = "cell_type"
+LOSS_PATH = "phase2_scatlasvae_loss.npz"   # 训练动态（loss 曲线 + λ_KL 预热真值）
 
 
 def train():
@@ -28,7 +30,23 @@ def train():
         batch_hidden_dim=10,
         device="cuda:0",
     )
-    model.fit()                    # epoch 数按 min(round(20000/N*400),400) 自动决定
+    # fit() 返回逐 epoch 的各项 loss；接住它以画训练曲线。
+    history = model.fit()          # epoch 数按 min(round(20000/N*400),400) 自动决定
+
+    # 记录 λ_KL 的真实预热轨迹：源码 fit() 里 n_epochs_kl_warmup=min(max_epoch,400)，
+    # 权重每个 epoch 末 +1/warmup，故第 e 个 epoch（0-indexed）实际用的权重 = e/warmup。
+    # 对 4 万细胞 max_epoch≈73<400 → warmup=73 → λ_KL 全程 0→~1（**证伪旧文档"只到0.18"的说法**）。
+    n_epoch = len(history["epoch_total_loss_list"])
+    warmup = min(n_epoch, 400)
+    kl_weight = np.minimum(1.0, np.arange(n_epoch) / warmup)
+    np.savez(
+        LOSS_PATH,
+        kl_weight=kl_weight,
+        **{k: np.asarray(v, dtype=float) for k, v in history.items()},
+    )
+    print(f"训练 {n_epoch} epoch；λ_KL 末值 ≈ {kl_weight[-1]:.3f}"
+          f"（若是旧文档说的 0.18 才对；实际应接近 1）-> 已存 {LOSS_PATH}")
+
     adata.obsm["X_scAtlasVAE"] = model.get_latent_embedding()
     adata.write_h5ad(PROC_PATH)
     model.save_to_disk("scatlasvae_tcell.pt")

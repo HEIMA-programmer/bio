@@ -23,8 +23,10 @@ import scanpy as sc
 # ============================================================
 RAW_PATH = "TCellLandscape_raw.h5ad"      # 原始数据（X = 整数计数）
 OUT_PATH = "tcell_processed.h5ad"          # 预处理输出
-BATCH_KEY = "study_name"                    # 批次列（可能是 study_name/patient/cancerType）
-LABEL_KEY = "cell_type"                     # 细胞类型列（可能是 meta.cluster/cell_type）
+# 实跑确定（phase2_data_fetch_gse156728.py 组装的 GSE156728 CD8 子集）：
+# batch 取 patient（45 个样本，真实的多样本整合挑战）；cell_type 取 meta.cluster（17 个 CD8 亚型）。
+BATCH_KEY = "patient"                       # 批次列
+LABEL_KEY = "cell_type"                     # 细胞类型列
 N_HVG = 4000                                # 论文对所有数据集统一取 4000 个高变基因
 MITO_PREFIX = "MT-"                         # 线粒体基因前缀（人类为 MT-）
 

@@ -21,10 +21,8 @@ import matplotlib.patheffects as pe
 # 路径
 # ----------------------------------------------------------------------
 REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "reports"))
-PNG_DIR = os.environ.get(
-    "FIG_PNG_DIR",
-    "/tmp/claude-1000/-home-vpnadmin-PRO1/874d7d0f-bb66-4795-8b46-dc5fb739b0cb/scratchpad/figpng",
-)
+import tempfile
+PNG_DIR = os.environ.get("FIG_PNG_DIR", os.path.join(tempfile.gettempdir(), "figpng"))
 os.makedirs(PNG_DIR, exist_ok=True)
 
 # ----------------------------------------------------------------------
@@ -52,9 +50,21 @@ def setup_cjk():
             return name
         except Exception:
             pass
+    # Windows（含中文家用版）自带 SimHei/微软雅黑/宋体，加入候选，保证本机也能出中文。
+    for winfont in ("C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc",
+                    "C:/Windows/Fonts/simsun.ttc"):
+        if os.path.exists(winfont):
+            try:
+                fm.fontManager.addfont(winfont)
+                name = fm.FontProperties(fname=winfont).get_name()
+                _apply_font(name)
+                return name
+            except Exception:
+                continue
     candidates = [
         "Noto Sans CJK SC", "Noto Sans CJK JP", "Noto Serif CJK SC",
         "WenQuanYi Zen Hei", "WenQuanYi Micro Hei", "Source Han Sans SC",
+        "SimHei", "Microsoft YaHei", "SimSun", "DengXian",
         "Droid Sans Fallback",
     ]
     installed = {f.name for f in fm.fontManager.ttflist}
@@ -66,7 +76,8 @@ def setup_cjk():
     for path in fm.findSystemFonts(fontpaths=None, fontext="ttf") + \
             fm.findSystemFonts(fontpaths=None, fontext="otf"):
         low = path.lower()
-        if any(k in low for k in ["notosanscjk", "notoserifcjk", "wqy", "sourcehan", "droidsansfallback"]):
+        if any(k in low for k in ["notosanscjk", "notoserifcjk", "wqy", "sourcehan",
+                                  "droidsansfallback", "simhei", "msyh", "simsun"]):
             try:
                 fm.fontManager.addfont(path)
                 name = fm.FontProperties(fname=path).get_name()

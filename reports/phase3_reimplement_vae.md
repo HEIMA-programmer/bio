@@ -3,7 +3,7 @@
 > **阶段** 3 / 5　·　**前置**：[阶段 2 · 整合与评测](phase2_integration_and_benchmark.md)、[知识框架](01_concepts_and_toolbox.md)　·　**产出**：手写模型 `minimal_scatlasvae.py` + 差异清单　·　**预计** 5 天
 > **导航**：[← 阶段 2](phase2_integration_and_benchmark.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)　·　[阶段 4 →](phase4_ablation_studies.md)
 >
-> **结果为「预期（示意）」占位**：先按手写版复现成功写完，你实跑后替换记录区。
+> **结果已为本机真实实跑（2026-07-09）**：手写最小 VAE 在 4 万 CD8 子集上训练，与官方实现做了定性(UMAP)+定量(kNN Jaccard)对照，记录区为真实数据。
 
 ---
 
@@ -164,11 +164,11 @@ def forward(self, X, lib_size, batch_index=None, label_index=None, ...):
 2. **第 1104 行 `if self.n_label > 0`**：只有传了标签才建分类头、才算分类损失——这就是"**半监督**"的开关。没标签的细胞（`new_adata_code`）在代码里被跳过，只参与重构和 KL。
 3. **第 1105 行 `CrossEntropyLoss(weight=self.label_category_weight)`**：交叉熵**按类频率加权**。`label_category_weight` 在构造时（第 697–701 行）算好——**稀有亚型权重更大**，防止模型偷懒只学多数类。这是论文公式里那个 $w_{\hat y}$ 的实现，读代码才看得具体。
 
-三块损失的相对量级、以及那个"λ_KL 从没到 1"的预热真相，放一张图：
+几块损失的相对量级、以及"λ_KL 因 min(max_epoch,400) 截断而 0→1 爬满"的预热真相，放一张图：
 
 ![损失三块 + 预热真相](fig_loss_and_warmup.svg)
 
-*图 3-2 — 左：三块损失相对量级（重构占大头）；右：KL 权重预热曲线的"真相"（下面 §8 细讲）。*
+*图 3-2 — 左：几块损失相对量级（重构占大头，另含读源码才见的"门控稀疏"项）；右：KL 权重预热的真相——因 `min(max_epoch,400)` 截断，λ_KL 在 max_epoch 内 0→1 爬满（下面 §8 细讲）。*
 
 ---
 
@@ -217,7 +217,7 @@ def fit(self, max_epoch=None, n_per_batch=128, kl_weight=1.,
 **门道**（三个细节，都是报告素材）：
 
 1. **默认超参直接抄**：`AdamW` · `lr=5e-5` · `weight_decay=1e-6` · `n_per_batch=128`（批大小）· `random_seed=12`。训练轮数 `max_epoch` 若不指定，按论文公式 $\min(\mathrm{round}(20000/N)\times400,\ 400)$——**N≈110218 时约 73 个 epoch**。
-2. **KL 预热的"真相"**（北极星问题 4 的进阶答案）：`n_epochs_kl_warmup=400`，训练中 KL 权重 `kl_weight = min(1, epoch/400)`。但上一条说 `max_epoch≈73`——**73 < 400，所以训练到结束，KL 权重最高才 ≈73/400 ≈ 0.18，从没升到过 1！** 这解释了图 3-2 右图那条只爬到 0.18 就被竖线截断的曲线。含义很深：**默认设置下 KL 正则一直很弱**，重构（ZINB）几乎全程主导——这也是模型敢用强重构的原因。论文正文只说"预热贯穿训练"，不读 `fit` 源码根本发现不了这个量级。
+2. **KL 预热的"真相"**（北极星问题 4 的进阶答案，这一版**更正了旧报告的一处硬错**）：`fit` 签名里确实写着 `n_epochs_kl_warmup=400`，但**紧接着有一行**（源码约 1301 行）：`n_epochs_kl_warmup = min(max_epoch, n_epochs_kl_warmup)`。所以当 `max_epoch < 400`（本项目 4 万细胞 `max_epoch=200`；11 万细胞 `≈73`），预热长度被**截断成 max_epoch**，权重 `kl_weight = min(1, epoch/max_epoch)`——**λ_KL 恰好在整个训练里从 0 线性爬到 ~1、末轮达到 ~1**。旧报告说"只到 ≈0.18、从没到 1"是**漏读了这行 `min` 截断**（把预热当成固定 400）。含义仍然成立、只是量级要摆对：**早期 λ_KL 很小、重构（ZINB）主导，末期才升到满强度**——这个"先重构、后正则"的爬坡是有意为之。实跑的 λ_KL 曲线（见 phase2 图 2-2）正好实证了它爬到 ~1。**这条纠错本身就是"读源码要读全、别停在函数签名"的最佳教材。**
 3. **`pred_last_n_epoch=10`**：分类头**只在最后 10 个 epoch 才重点训练**。为什么？**先让编码器把表示学好（前 60 多个 epoch 专心重构+整合），最后再学分类更稳**——先打地基、再盖楼。
 
 > **深入（可选）**：`fit`/`calculate_metric` 里还用了 `ThreadPoolExecutor` 预取下一个 batch（`_prepare_batch`）——纯工程优化，和方法无关，读到时知道"哦这是为了加速取数"即可，不必深究。
@@ -262,18 +262,20 @@ conda activate scatlasvae
 python phase3_train_and_compare.py
 ```
 
-**预期结果（示意，待实跑替换）**：
+**结果（本机实测）**：
 
-![官方 vs 手写 UMAP 对照（示意）](fig_phase3_umap_compare.svg)
+![官方 vs 手写 UMAP 对照（真实）](fig_phase3_umap_compare.svg)
 
-*图 3-4 — 手写版能把主要亚型分开，UMAP 与官方**趋势一致但非逐点一致**；kNN 邻域 Jaccard **≈ 0.4–0.6**（结构相似即成功——绝不会是 1.0，因为随机种子、实现细节、浮点都会带来差异，这正常）。*
+*图 3-4 — **真实对照**（按 17 个 CD8 亚型上色）。官方与手写最小版把**同一批主要亚型放到相似的区域**：红色 Temra 在右、绿色 Tem 居中、蓝色 Tn 在底、紫/淡紫的 Tk/Trm 在左上——**结构趋势高度一致**。kNN 邻域平均 Jaccard=**0.235**。*
 
-**记录区（实跑后填）**：
+**记录区（本机实测 2026-07-09）**：
 ```
-手写版训练 epoch=____  最终loss=____  有无NaN=____
-官方 vs 手写 kNN Jaccard=____
-UMAP 定性：主要亚型是否都分开=____   批次是否混开=____
+手写版训练 epoch=200  最终loss≈1362（每细胞，.mean 归一）  有无NaN=无  λ_KL 末值=1.00
+官方 vs 手写 kNN Jaccard=0.235
+UMAP 定性：主要亚型是否都分开=是（Tn/Tem/Temra/Tk/Trm/Tex 各成区，且与官方对应）   批次是否混开=是（继承 batch-invariant 编码器）
 ```
+
+> **怎么读 Jaccard=0.235（诚实）**：它比旧稿"示意"的 0.4–0.6 低。但 ① **远高于随机**（k=30、4 万细胞时随机期望≈30/40000≈7e-4），说明两套嵌入抓到的是**同一套结构**；② kNN Jaccard 是**很严格的局部指标**——只要两套实现对"谁是第 30 个近邻"稍有分歧就掉分，而**图 3-4 的定性一致才是复现成功的直接证据**；③ 手写版**刻意省掉了**类频率加权 CE、门控稀疏损失、FCLayer 式 batch 嵌入、验证/早停等（见 §11 差异清单）——这些都会让局部邻域与官方产生偏差。判成功看**趋势/结构一致**（[总纲](00_overview_and_learning_map.md)），这一条达成了。
 
 ---
 
@@ -291,6 +293,8 @@ UMAP 定性：主要亚型是否都分开=____   批次是否混开=____
 | MMD / latent constraint | 可选开启（`mmd_key` / `constrain_latent_embedding`） | 未实现 | 可选正则；不影响核心机制（见 §13） |
 | 归一化路径 | `log_variational` + 可选 `total_variational` | 仅 `log1p` | 覆盖默认路径 |
 | 验证集/早停/lr 调度 | 有 | 简化为固定 epoch | 教学最小化；对结论趋势无碍 |
+| **dropout 门控稀疏损失** | `fit()` 里额外加 `gate_weight·sigmoid(π).sum(1).mean()` | **未加** | 把零膨胀门控整体往下压的稀疏正则；核心机制不变，但官方 dropout 更保守（§13 第 7 条） |
+| **损失归一方式** | 重构/KL 用 `reduction='sum'` 后 `/ n_per_batch` | 用 `.mean()`（逐元素均值） | 数量级不同（前者≈"每细胞按基因求和"再除批大小），但优化方向一致、趋势不变 |
 | 数值稳定细节 | 多处 eps、init 策略 | 保留关键 eps（`1e-4`/`1e-8`） | 防 NaN 的最低要求 |
 
 > 每一行都是知识点、也是报告素材：**你不是"没写完"，而是做了有依据的范围削减**——把这些讲清楚，比硬凑一个全功能版更能体现理解。
@@ -310,12 +314,13 @@ UMAP 定性：主要亚型是否都分开=____   批次是否混开=____
 把 §4–§8 读出来的"论文正文没展开、源码里却有"的东西汇总——发现并理解它们本身就是复现价值（北极星问题 7）：
 
 1. **编码器 batch-invariant = 被注释的 `_gex_model.py:966-967`**——最硬的一处"设计意图"证据。
-2. **KL 预热默认 400、而 max_epoch≈73 → λ_KL 全程 ≤~0.18、从没到 1**（§8）。
+2. **KL 预热被 `n_epochs_kl_warmup = min(max_epoch, 400)` 截断**：因本项目 max_epoch<400，λ_KL 在整个训练里 0→~1 爬满、末轮≈1（旧报告误作"只到 ≈0.18、从没到 1"，是漏读那行 `min`，已在 §8 更正并用实跑曲线证实）。
 3. **`z_transformation=nn.Softmax` 定义了却没施加在所用的 `z` 上**，docstring 却称 "Logisticnormal"（§4）。
 4. **层级 batch（`n_additional_batch`）+ 多分类头（`additional_fc`）** 支撑跨图谱；解码器 `+1 dummy`（§5）。
 5. **按类频率加权的交叉熵**（`label_category_weight`，§6）治类别不平衡。
 6. **`pred_last_n_epoch=10`**：分类头后期才训练（§8）。
-7. **MMD loss / latent constraint / TabNet 编码器** 三个可选特性，正文未提。
+7. **dropout 门控稀疏损失**：`fit()` 第 1413 行 `avg_gate_loss = gate_weight * sigmoid(px_rna_dropout).sum(1).mean()` 被**直接加进总损失**——一个把零膨胀门控整体往下压的稀疏正则（鼓励"少用零膨胀、多让 NB 解释计数"）。论文正文只讲 ZINB 三头，不提这条附加正则；手写最小版没实现它（见 §11 差异清单）。
+8. **MMD loss / latent constraint / TabNet 编码器** 三个可选特性，正文未提。
 
 ---
 

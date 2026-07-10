@@ -113,7 +113,7 @@ find scAtlasVAE/scatlasvae -name '*.py' | xargs wc -l | sort -n | tail -20
 | 阶段 | 做什么 | 你会学到 | 首次遇到的包 | 产出物 | 对应论文 |
 |---|---|---|---|---|---|
 | **1 环境搭建** | 在 4060 上搭训练环境，顺带学"怎么摸清一个陌生库" | GPU 算力↔CUDA↔PyTorch 版本的关系；依赖管理；侦查陌生库的通用手法 | `conda` `pip` `pytorch` | 可跑通的环境 + 冒烟测试 | — |
-| **2 端到端跑通** | 用真实数据 TCellLandscape 走完"预处理→整合→评测" | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `scvi-tools` `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 |
+| **2 端到端跑通** | 用真实数据 TCellLandscape 走完"预处理→整合→评测" | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `harmonypy`(baseline) `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 |
 | **3 核心 VAE 从零重写** ★ | 带你逐行读 `_gex_model.py`，再对着它手写最小版 | VAE 全套；ZINB；KL 预热；**把论文公式/源码翻译成代码** | `torch.nn` `torch.distributions` | 手写模型 + "我的实现 vs 原实现"差异清单 | Fig 1b, Methods |
 | **4 消融实验** | 改一个设计旋钮，看结论怎么变 | 控制变量法；从"我复现了"到"我验证了作者为什么这么设计" | （复用上面） | 消融结果图/表 + 结论 | Ext. Data Fig 4 |
 | **5 汇总报告** | 整理成组会汇报稿 | 科学写作：诚实讲清做了/没做什么、为什么 | — | 最终报告 / slides | — |

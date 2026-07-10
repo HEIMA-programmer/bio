@@ -132,9 +132,10 @@ class MinimalScAtlasVAE(nn.Module):
         history = []
         for epoch in range(1, max_epoch + 1):
             # KL 预热：权重从 0 线性升到 1，防后验坍缩（见 01 文档 §1.4i）。
-            # 注：这里用 epoch/max_epoch，预热正好跨满整个训练、末尾到 1；
-            # 官方 fit() 用固定的 n_epochs_kl_warmup=400，而 max_epoch≈73，
-            # 所以官方默认下 λ_KL 全程只到 ≈0.18、从没到 1（见阶段 3 §8）。
+            # 用 epoch/max_epoch，预热跨满整个训练、末尾到 ~1。
+            # 这其实**与官方一致**：官方 fit() 里 `n_epochs_kl_warmup = min(max_epoch, 400)`，
+            # 本项目 max_epoch<400 → 预热长度被取成 max_epoch，λ_KL 同样 0→~1 爬满全程。
+            # （旧说法"官方只到 ≈0.18、从没到 1"是漏读了那行 min 截断，见阶段 3 §8 的实测更正。）
             kl_weight = min(1.0, epoch / max_epoch)
             self.train()
             running = 0.0

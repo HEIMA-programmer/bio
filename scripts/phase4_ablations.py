@@ -17,8 +17,13 @@ import argparse
 import scanpy as sc
 
 PROC_PATH = "tcell_processed.h5ad"
-BATCH_KEY = "study_name"
+BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
+# 消融关心的是"改一个旋钮、相对排序变不变"，不需要每个配置都训满 200 epoch。
+# 4 个配置若各训 200 epoch 约需 ~2 小时；在 4060 笔记本上把每个配置截到 100 epoch，
+# 足够看出相对差异，总时长 ~1 小时。注意：预热长度 = min(max_epoch,400)=100，
+# 所以"默认预热"这一支 λ_KL 在这 100 epoch 内 0→1 爬满（与 nowarmup 支恒 1.0 形成对照）。
+MAX_EPOCH_ABL = 100
 
 
 def train():
@@ -31,17 +36,17 @@ def train():
             adata=adata, batch_key=BATCH_KEY, label_key=LABEL_KEY,
             n_latent=k, device="cuda:0",
         )
-        m.fit()
+        m.fit(max_epoch=MAX_EPOCH_ABL)
         adata.obsm[f"X_nlat{k}"] = m.get_latent_embedding()
 
-    # 消融 2：关掉 KL 预热（n_epochs_kl_warmup=0 → 第一轮就给满权重）
+    # 消融 2：关掉 KL 预热（n_epochs_kl_warmup=0 → 第一轮就给满权重 1.0）
+    # 对照支 = 上面 n_latent=10 那份（有预热，λ_KL 在 100 epoch 内 0→1 爬满）
     m = scatlasvae.model.scAtlasVAE(
         adata=adata, batch_key=BATCH_KEY, label_key=LABEL_KEY,
         n_latent=10, device="cuda:0",
     )
-    m.fit(n_epochs_kl_warmup=0)
+    m.fit(max_epoch=MAX_EPOCH_ABL, n_epochs_kl_warmup=0)
     adata.obsm["X_nowarmup"] = m.get_latent_embedding()
-    # 有预热的基线就是上面的 X_nlat10
 
     adata.write_h5ad(PROC_PATH)
     print("消融训练完成：obsm 里新增 X_nlat2 / X_nlat10 / X_nlat50 / X_nowarmup")

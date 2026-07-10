@@ -18,7 +18,7 @@ from sklearn.neighbors import NearestNeighbors
 from minimal_scatlasvae import MinimalScAtlasVAE
 
 PROC_PATH = "tcell_processed.h5ad"
-BATCH_KEY = "study_name"
+BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
 
 
