@@ -1,4 +1,10 @@
-"""生成全部"结构图"（架构 / 流程 / 概念）到 reports/*.svg，并输出 PNG 供目检。
+"""【已弃用 DEPRECATED】生成"结构/流程/概念"示意图为 reports/*.svg。
+
+自 2026-07（阶段 6 · F 项图表改造）起，所有**示意/流程/概念图**已改为在报告 .md 里
+直接用 **Mermaid 代码块**内嵌（GitHub 原生渲染、零文件、可 diff）。本脚本产出的
+散乱手绘 SVG 已从 reports/ 删除、不再被任何报告引用，故整体弃用、保留仅作历史参考。
+
+如需**实验结果图**（UMAP/条形/曲线/混淆矩阵/探针），请用 build_real.py（输出 PNG 到 reports/figures/）。
 
 运行：python3 build_structures.py [fig_name ...]   # 不带参数=全部
 每个 fig_* 函数画一张图，风格统一取自 theme.py。

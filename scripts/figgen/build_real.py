@@ -36,6 +36,9 @@ plt.rcParams.update({
 
 DATA_DIR = os.environ.get("REAL_DATA_DIR",
                           os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data")))
+# F 项改造：结果图统一输出 PNG 到 reports/figures/（不再往 reports/ 顶层散落 SVG）。
+FIG_DIR = os.path.join(T.REPORTS_DIR, "figures")
+os.makedirs(FIG_DIR, exist_ok=True)
 
 
 def _clean(ax):
@@ -45,12 +48,11 @@ def _clean(ax):
 
 
 def _save(fig, name):
-    svg = f"{T.REPORTS_DIR}/{name}.svg"
-    png = f"{T.PNG_DIR}/{name}.png"
-    fig.savefig(svg, format="svg", bbox_inches="tight", pad_inches=0.12)
-    fig.savefig(png, format="png", dpi=145, bbox_inches="tight", pad_inches=0.12)
+    """只写 PNG 到 reports/figures/（结果图光栅化，GitHub 直接渲染、体积小、中文稳定）。"""
+    png = f"{FIG_DIR}/{name}.png"
+    fig.savefig(png, format="png", dpi=150, bbox_inches="tight", pad_inches=0.12)
     plt.close(fig)
-    print("wrote", svg)
+    print("wrote", png)
 
 
 # ======================================================================
@@ -117,12 +119,86 @@ def _bars_from_csv(csv_name, order, title, outname, note=None):
 
 
 def bench():
+    # 阶段 6 · E2：四方对比（复现论文 Ext. Data Fig. 2a 的 无监督/监督 两根柱）。
     _bars_from_csv(
         "phase2_benchmark_results.csv",
-        ["X_pca", "X_scVI", "X_scAtlasVAE"],
-        "整合评测：三种嵌入对比（真实，scib-metrics）",
+        ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"],
+        "整合评测：PCA / scVI / scAtlasVAE(无监督) / scAtlasVAE(监督)（真实，scib-metrics）",
         "fig_phase2_benchmark_bars",
-        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看方法间相对排序（X_pca 未校正 / X_scVI batch-variant VAE / X_scAtlasVAE 本方法）。")
+        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看相对排序。无监督 scAtlasVAE≈scVI、监督版更高——复现论文 Ext. Data Fig. 2a。")
+
+
+def bench_minimal():
+    # 阶段 6 · E4：把手写最小 VAE 放上同一把标尺。
+    _bars_from_csv(
+        "phase6_minimal_bench.csv",
+        ["X_pca", "X_scVI", "X_scAtlasVAE_sup", "X_minimal"],
+        "手写最小 VAE 上标尺：与 PCA / scVI / 官方监督版并列（真实，scib-metrics）",
+        "fig_phase6_minimal_bench",
+        note="注：X_minimal = 从零手写的最小 scAtlasVAE。看它相对 PCA 与 scVI/官方落在哪，量化手写实现的水平。")
+
+
+def transfer():
+    """阶段 6 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。"""
+    import pandas as pd
+    df = pd.read_csv(os.path.join(DATA_DIR, "phase6_transfer_results.csv"))
+    metrics = [("accuracy", "Accuracy"), ("macro_f1", "macro-F1"), ("macro_ovr_auc", "macro OVR-AUC")]
+    designs = {"A": "设计A(随机5%)", "B": "设计B(整癌种UCEC)"}
+    mcol = {"scAtlasVAE (zero-shot)": PAL["encoder"]["ink"],
+            "scAtlasVAE (full-shot)": PAL["latent"]["ink"],
+            "kNN on scVI latent": PAL["accentA"]["ink"]}
+    dlist = [d for d in ["A", "B"] if d in set(df["design"])]
+    fig, axes = plt.subplots(1, len(dlist), figsize=(5.6 * len(dlist), 4.7), squeeze=False)
+    for ax, d in zip(axes[0], dlist):
+        sub = df[df["design"] == d]
+        methods = list(sub["method"])
+        x = np.arange(len(metrics)); w = 0.8 / max(1, len(methods))
+        for i, mth in enumerate(methods):
+            row = sub[sub["method"] == mth].iloc[0]
+            vals = [float(row[k]) for k, _ in metrics]
+            b = ax.bar(x + (i - (len(methods) - 1) / 2) * w, vals, w,
+                       color=mcol.get(mth, MUTED), label=mth, edgecolor="white", linewidth=0.8)
+            ax.bar_label(b, fmt="%.2f", fontsize=7.6, color=MUTED, padding=2)
+        ax.set_xticks(x); ax.set_xticklabels([lab for _, lab in metrics], fontsize=9.5)
+        ax.set_ylim(0, 1.05)
+        ax.set_title(designs.get(d, d), fontsize=12, fontweight="bold", pad=8)
+        ax.legend(fontsize=8.3, frameon=False, loc="lower left")
+        _clean(ax)
+    axes[0][0].set_ylabel("分数（越高越好）", fontsize=10)
+    fig.suptitle("注释迁移（Task 3）：zero-shot / full-shot / kNN 对照（真实）",
+                 fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    _save(fig, "fig_phase6_transfer")
+
+
+def invariance():
+    """阶段 6 · E3：批不变探针——打乱 batch 后潜向量漂移，scAtlasVAE≈0 vs scVI>0。"""
+    import pandas as pd
+    parts = []
+    for fn in ("phase6_invariance_scatlasvae.csv", "phase6_invariance_scvi.csv"):
+        p = os.path.join(DATA_DIR, fn)
+        if os.path.exists(p):
+            parts.append(pd.read_csv(p))
+    if not parts:
+        raise FileNotFoundError("phase6_invariance_*.csv")
+    df = pd.concat(parts, ignore_index=True)
+    fig, ax = plt.subplots(figsize=(8.6, 4.7))
+    models = list(df["model"]); drift = [float(v) for v in df["mean_l2_drift_perm"]]
+    # 按漂移大小上色：≈0（batch-invariant）用蓝、明显>0（batch-variant）用玫红。
+    cols = [PAL["encoder"]["ink"] if d < 1e-3 else PAL["accentB"]["ink"] for d in drift]
+    b = ax.bar(range(len(models)), drift, width=0.55, color=cols, edgecolor="white", linewidth=1)
+    ax.bar_label(b, fmt="%.3f", fontsize=10, color=INK, padding=3)
+    ax.set_xticks(range(len(models)))
+    ax.set_xticklabels(models, fontsize=9.5)
+    ax.set_ylabel("打乱 batch 后 z 的平均 L2 漂移", fontsize=10)
+    ax.set_ylim(0, max(0.05, max(drift) * 1.25))
+    ax.set_title("批不变编码器探针：同一批细胞、打乱 batch，潜向量动不动？（真实）",
+                 fontsize=12, fontweight="bold", pad=10)
+    sub = ("蓝=编码器不吃 batch→漂移≈0；玫红=编码器吃 batch→明显漂移。scAtlasVAE **结构上永不**编码 batch；"
+           "scVI 默认也不编码(细节)，仅 encode_covariates=True 时才 batch-variant。")
+    fig.text(0.5, -0.02, sub, ha="center", fontsize=8.2, color=MUTED)
+    _clean(ax)
+    _save(fig, "fig_phase6_invariance")
 
 
 def ablation():
@@ -211,9 +287,11 @@ def umap_compare():
 if __name__ == "__main__":
     targets = sys.argv[1:] or ["all"]
     if "all" in targets:
-        targets = ["loss", "bench", "ablation", "umap_integration", "umap_compare"]
+        targets = ["loss", "bench", "ablation", "umap_integration", "umap_compare",
+                   "bench_minimal", "transfer", "invariance"]
     fns = {"loss": loss_curve, "bench": bench, "ablation": ablation,
-           "umap_integration": umap_integration, "umap_compare": umap_compare}
+           "umap_integration": umap_integration, "umap_compare": umap_compare,
+           "bench_minimal": bench_minimal, "transfer": transfer, "invariance": invariance}
     for t in targets:
         if t in fns:
             try:

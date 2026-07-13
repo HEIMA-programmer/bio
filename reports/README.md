@@ -17,7 +17,7 @@
 
 新手请按此顺序读，先建立框架再动手：
 
-**[总纲](00_overview_and_learning_map.md) → [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [阶段 2](phase2_integration_and_benchmark.md) → [阶段 3 ★](phase3_reimplement_vae.md) → [阶段 4](phase4_ablation_studies.md) → [阶段 5](phase5_final_report.md)**
+**[总纲](00_overview_and_learning_map.md) → [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [阶段 2](phase2_integration_and_benchmark.md) → [阶段 3 ★](phase3_reimplement_vae.md) → [阶段 4](phase4_ablation_studies.md) → [阶段 5](phase5_final_report.md) → [阶段 6](phase6_deeper_validation.md)**
 
 ---
 
@@ -25,15 +25,16 @@
 
 | # | 内容 | 报告 | 配套脚本 / 图 |
 |---|---|---|---|
-| 总纲 | 先探索再上路：读论文 Fig1、走仓库树、推出复现路线 | [00_overview_and_learning_map.md](00_overview_and_learning_map.md) | `fig_paper_story` · `fig_repo_map` · `fig_pipeline_overview` |
-| 框架 | 从生物问题到 VAE 的直觉 + 工具箱 | [01_concepts_and_toolbox.md](01_concepts_and_toolbox.md) | `fig_ae_vs_vae_latent_space` · `fig_zinb_construction` |
+| 总纲 | 先探索再上路：读论文 Fig1、走仓库树、推出复现路线 | [00_overview_and_learning_map.md](00_overview_and_learning_map.md) | Mermaid 示意图 |
+| 框架 | 从生物问题到 VAE 的直觉 + 工具箱 | [01_concepts_and_toolbox.md](01_concepts_and_toolbox.md) | Mermaid 示意图 |
 | 1 | 环境搭建 + 摸清陌生库 | [phase1_environment_setup.md](phase1_environment_setup.md) | `phase1_smoke_test.py` |
-| 2 | 端到端跑通 + 整合评测 | [phase2_integration_and_benchmark.md](phase2_integration_and_benchmark.md) | `phase2_*.py` · 3 图 |
-| 3 ★ | 核心 VAE 从零重写（含源码逐行走读） | [phase3_reimplement_vae.md](phase3_reimplement_vae.md) | `minimal_scatlasvae.py` · `phase3_train_and_compare.py` · 5 图 |
-| 4 | 消融实验 | [phase4_ablation_studies.md](phase4_ablation_studies.md) | `phase4_ablations.py` · 2 图 |
+| 2 | 端到端跑通 + 整合评测 | [phase2_integration_and_benchmark.md](phase2_integration_and_benchmark.md) | `phase2_*.py` · 结果图 |
+| 3 ★ | 核心 VAE 从零重写（含源码逐行走读） | [phase3_reimplement_vae.md](phase3_reimplement_vae.md) | `minimal_scatlasvae.py` · `phase3_train_and_compare.py` |
+| 4 | 消融实验 | [phase4_ablation_studies.md](phase4_ablation_studies.md) | `phase4_ablations.py` |
 | 5 | 复现汇总报告（组会稿） | [phase5_final_report.md](phase5_final_report.md) | 引用全部图 |
+| 6 | 深入验证与扩展：注释迁移 / 监督vs无监督 / 批不变探针 / 手写VAE上标尺 / 指标对照 | [phase6_deeper_validation.md](phase6_deeper_validation.md) | `phase6_*.py` · 结果图 |
 
-> **状态（2026-07 更新）**：阶段 1–4 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均已替换为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成。所有脚本在 [`../scripts/`](../scripts/)。
+> **状态（2026-07 更新）**：阶段 1–6 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。所有脚本在 [`../scripts/`](../scripts/)。
 
 ---
 
@@ -50,11 +51,16 @@
 
 ## 4. 配图
 
-全部 16 张配图由 [`../scripts/figgen/`](../scripts/figgen/) 用 **matplotlib** 程序化生成（中文经字体探测 + 矢量路径嵌入，任何机器打开都不掉字）：`theme.py`（设计系统）、`build_structures.py`（结构/架构/概念图）、`build_data.py`（数据/定量图，均标注「示意/预期」）。重跑：
+图分两类，各按最合适的方式呈现（既好看又不让一堆 SVG 散落仓库）：
+
+- **示意 / 流程 / 概念图** → 用 [Mermaid](https://mermaid.js.org/) 代码块**直接内嵌**在 `.md` 里，GitHub 原生渲染、零文件、可 diff、可直接改文字。
+- **实验结果图**（UMAP、条形、曲线、混淆矩阵、探针）→ 由 [`../scripts/figgen/build_real.py`](../scripts/figgen/build_real.py) 从**真实实跑产物**生成为 PNG，集中放 [`figures/`](figures/)。`theme.py` 负责中文字体。重跑：
 
 ```bash
-cd ../scripts/figgen && python3 build_structures.py && python3 build_data.py
+cd ../scripts/figgen && python build_real.py all   # 在 scib 环境
 ```
+
+> 为何不用 data-URI 内嵌图：GitHub Markdown 会拦截 `data:` 图片（camo/CSP）导致裂图；所以**结果图走 PNG 文件、示意图走 Mermaid**是 GitHub 上都能渲染的稳妥组合。`build_structures.py` / `extract_sc_font.py`（旧的手绘示意图生成器）已随示意图转 Mermaid 而弃用。
 
 ---
 

@@ -1,0 +1,2 @@
+model,encoder,n_cells_probed,max_abs_dz_perm_batch,max_abs_dz_none_batch,mean_l2_drift_perm
+scAtlasVAE,batch-invariant F(X),8000,0.0,0.0,0.0

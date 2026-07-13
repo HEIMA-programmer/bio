@@ -5,9 +5,13 @@
 >
 > 本稿综合前四阶段。数字/图均为**本机 RTX 4060 真实实跑**：数据为 GSE156728 的 10X CD8 子集（~4 万细胞），baseline 用 **scVI**（scvi-tools；Windows 需先开长路径才能装）。含若干与直觉/旧稿不符的诚实结果与成因讨论。
 
-![复现全流程](fig_pipeline_overview.svg)
+```mermaid
+flowchart LR
+    S1["① 环境搭建"] --> S2["② 端到端整合评测"] --> S3["③ 核心 VAE 重写 ★"]
+    S3 --> S4["④ 消融实验"] --> S5["⑤ 汇总报告"] --> S6["⑥ 深入验证与扩展"]
+```
 
-*图 5-1 — 复现全流程：环境 → 整合评测 → 手写 VAE（核心）→ 消融 → 汇总。*
+*图 5-1 — 复现全流程：环境 → 整合评测 → 手写 VAE（核心）→ 消融 → 汇总 → 深入验证与扩展（本轮新增）。*
 
 ---
 
@@ -15,7 +19,13 @@
 
 CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**（Xue et al., *Nature Methods* 2024）是一个基于 VAE 的深度学习模型，用于**大规模 scRNA-seq 数据的图谱级整合与查询数据迁移**，作者据此构建了 115 万细胞的人 CD8⁺ T 细胞图谱、划分 18 个亚型（含 3 个耗竭 Tex 亚型），并结合配对 TCR 做克隆分析。这条科学故事，我们在[总纲](00_overview_and_learning_map.md)通过读论文 Fig 1 一起推导过：
 
-![论文科学故事](fig_paper_story.svg)
+```mermaid
+flowchart LR
+    A["数据<br/>68 studies·42 疾病<br/>CD8⁺ T + TCR"] --> B["115 万细胞<br/>参考 atlas"] --> C["18 个亚型"]
+    C --> D["3 个 Tex 亚型"]
+    C --> E["TCR 克隆分析"]
+    C --> F["迁移注释"]
+```
 
 *图 5-2 — scAtlasVAE 是贯穿全故事的"方法引擎"，本次复现聚焦它。*
 
@@ -25,9 +35,17 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 ## 2. 方法拆解
 
-![scAtlasVAE 架构](fig_scatlasvae_architecture.svg)
+```mermaid
+flowchart LR
+    X["基因表达 X<br/>原始计数 N×4000"] --> ENC["批不变编码器<br/>F(X)→μ,σ²<br/><b>只吃 X，不看 batch（题眼）</b>"]
+    ENC --> Z["潜向量 z<br/>z=μ+σε N×10"]
+    Z --> DEC["批条件解码器<br/>F(z,B)→MLP"]
+    B["批次 B → 嵌入 (dim 8)<br/>batch 仅在此注入"] --> DEC
+    DEC --> ZINB["ZINB 三头<br/>scale×文库=μ · 离散度 θ · 门控 π<br/>重构 N×4000"]
+    Z --> CLS["分类头（线性，半监督·可选）<br/>z → 细胞类型"]
+```
 
-*图 5-3 — 架构：批不变编码器 → 潜向量 → 批条件解码器（ZINB 三头）→ 分类头。*
+*图 5-3 — 架构：批不变编码器 → 潜向量 → 批条件解码器（ZINB 三头）→ 分类头。总损失 = ZINB 重构 + λ_KL·KL + λ_ct·交叉熵。*
 
 - **批不变编码器（题眼）**：编码器 $F(X)\to(\mu,\sigma^2)$ **只吃基因表达 X、不看 batch**。这一点有代码铁证——`_gex_model.py:966-967` 把 batch 拼进输入的那行**被注释掉了**。正因编码器不依赖 batch，查询数据可**不重训直接映射**进参考图谱（zero-shot 迁移）。这是它与 scVI（编码器 $F(X,B,S)$）的**本质区别**。
 - **批条件解码器**：batch 只在**解码端**注入（经嵌入层与 $z$ 拼接），输出 ZINB 三参数（$\mathrm{scale}\times\text{文库}=\mu$、离散度 $\theta$、门控 $\pi$）重构原始计数。
@@ -55,21 +73,24 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 **整合效果**（图 5-4）：未校正时细胞按癌种/患者(batch)分裂；scAtlasVAE 整合后各 batch 在类型簇内更混合，而 17 个 CD8 亚型仍分得开。
 
-![整合前后 UMAP](fig_phase2_integration_umap.svg)
+![整合前后 UMAP](figures/fig_phase2_integration_umap.png)
 
 *图 5-4 — 上排未校正 X_pca、下排 scAtlasVAE；左列按癌种(batch)、右列按亚型（真实）。*
 
 **定量对比**（图 5-5，scib-metrics 实测）：
 
-![整合评测条形](fig_phase2_benchmark_bars.svg)
+![整合评测条形](figures/fig_phase2_benchmark_bars.png)
 
 | 嵌入 | 批次校正 | 生物保留 | 总分 |
 |---|---|---|---|
 | `X_pca`（未校正） | 0.27 | 0.37 | 0.33 |
 | `X_scVI` | 0.29 | 0.48 | 0.40 |
-| **`X_scAtlasVAE`** | **0.31** | **0.49** | **0.42** |
+| `X_scAtlasVAE_unsup`（无监督） | 0.30 | 0.48 | 0.41 |
+| **`X_scAtlasVAE_sup`（监督）** | **0.31** | **0.49** | **0.42** |
 
-**结论**：**相对排序与论文趋势一致**——**scAtlasVAE ≳ scVI ≫ 未校正 PCA**（总分 0.42 / 0.40 / 0.33）。两种 VAE 都明显校正了批次、总分远高于 PCA，且 scAtlasVAE 在批次校正与生物保留两项上都**略优于 scVI**，正对上论文 **Ext. Data Fig. 1** 的"scAtlasVAE 与 scVI 相当或略优"。绝对分因 scib-metrics ≠ 旧 scib、子集小、默认超参而偏低,属正常;**判成功看相对排序**,这次稳稳复现了。（另跑了 Harmony 作可选第二基线,数据在仓库可查。）
+**结论**：**相对排序与论文趋势一致**——**监督 scAtlasVAE > 无监督 scAtlasVAE ≈ scVI ≫ 未校正 PCA**（总分 0.42 / 0.41 / 0.40 / 0.33）。**无监督 scAtlasVAE 与 scVI 基本打平、监督版才明显胜出**，正对上论文 **Ext. Data Fig. 2a**；这也说明 scAtlasVAE 相对 scVI 的优势来自**半监督分类头**、而非整合骨架本身（[阶段 6 · E2](phase6_deeper_validation.md) 专门补了这根无监督柱、纠正了原稿只画监督版一根柱的坑）。绝对分因 scib-metrics ≠ 旧 scib、子集小、默认超参而偏低，属正常；**判成功看相对排序**，这次稳稳复现了。（另跑了 Harmony 作可选第二基线，数据在仓库可查。）
+
+> **阶段 6 又补了三件事**（详见 [阶段 6 报告](phase6_deeper_validation.md)）：**注释迁移**（Task 3，zero/full-shot 自动打标签）、**批不变编码器实证探针**（打乱 batch，scAtlasVAE 潜向量 Δz≡0）、**把手写最小 VAE 放上同一把 scib 标尺**（总分 0.403，与 scVI 打平）。这三件把整合主线补到"Task 1 完整 + Task 3"，并把"编码器只吃 X"从"读到"升级成"测到"。
 
 ---
 
@@ -77,7 +98,7 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 **手写最小 VAE**（[`minimal_scatlasvae.py`](../scripts/minimal_scatlasvae.py)）复刻了：批不变编码器、重参数化、批条件解码器、ZINB 负对数似然、解析 KL + 预热、单分类头。做法是**先逐行读官方 `_gex_model.py`（encode/decode/forward/fit）再对着重写**（见 [阶段 3](phase3_reimplement_vae.md)）。在 TCellLandscape 上训练，与官方 latent 对比：
 
-![官方 vs 手写 UMAP](fig_phase3_umap_compare.svg)
+![官方 vs 手写 UMAP](figures/fig_phase3_umap_compare.png)
 
 *图 5-6 — 官方 vs 手写：UMAP 把同一批主要亚型放到相似区域（红 Temra 在右、绿 Tem 居中、蓝 Tn 在底），**结构趋势高度一致**；kNN 邻域 Jaccard=0.235（远高于随机 ~7e-4；严格局部指标偏低，定性一致才是成功的直接证据，详见 [阶段 3 §10](phase3_reimplement_vae.md)）。*
 
@@ -96,7 +117,7 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 （详见 [阶段 4](phase4_ablation_studies.md)。）
 
-![消融对比](fig_phase4_ablation_bars.svg)
+![消融对比](figures/fig_phase4_ablation_bars.png)
 
 *图 5-7 — 消融（真实）：左潜维度 2/10/50、右 KL 预热 开/关。*
 
@@ -136,18 +157,20 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 ---
 
-## 附 B · 汇报 slides 大纲（约 10 页）
+## 附 B · 汇报 slides 大纲（约 12 页）
 
 1. 题目 + 一句话：复现 scAtlasVAE（Nature Methods 2024）
 2. 问题背景：CD8⁺ T 细胞图谱 + 批次效应（用图 5-2 科学故事）
 3. 方法一图：架构图（编码器 batch-invariant 是题眼，图 5-3）
-4. 与 scVI 的关键区别（编码器 batch 位置对比图）
+4. 与 scVI 的关键区别（编码器 batch 位置对比）
 5. 复现设置：数据/环境（4060 换 cu118 的坑）/超参
 6. 结果 1：整合前后 UMAP（图 5-4）
-7. 结果 2：scib-metrics 指标对比（图 5-5）
-8. 核心：手写 VAE + 逐行读源码 + 差异清单 + "代码>论文"发现
+7. 结果 2：scib-metrics 四方对比——**监督 > 无监督 ≈ scVI ≫ PCA**（图 5-5，复现 Ext.Data Fig.2a）
+8. 核心：手写 VAE + 逐行读源码 + 差异清单 + "代码>论文"发现（手写版上标尺 = scVI 同档）
 9. 消融：潜维度 / KL 预热 → 设计是否必要（图 5-7）
-10. 局限与收获（诚实声明）
+10. **扩展 1 · 注释迁移**（Task 3）：zero/full-shot 自动打标签 + kNN 对照（阶段 6 · E1）
+11. **扩展 2 · 批不变探针**：打乱 batch，scAtlasVAE Δz≡0 vs scVI(编码batch)漂移（阶段 6 · E3）
+12. 局限与收获（诚实声明：小参考集、指标口径、主动报告与论文不符的细节）
 
 ---
 

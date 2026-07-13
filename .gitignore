@@ -16,9 +16,11 @@ Thumbs.db
 *.ckpt
 # GEO 原始下载 (GSE156728 的 CD8 计数/元数据, ~180MB)
 *.txt.gz
-# scanpy/scib 的原始落图 (报告用的成品图在 reports/)
+# scanpy/scib 的原始落图 (报告用的成品图在 reports/figures/)
 data/figures/
 data/scib_results.svg
+# 训练/评测的工作日志 (tqdm 刷屏, 体积大, 不入库)
+*.log
 
 # 配图字体(体积大, 可由 figgen/extract_sc_font.py 从系统 Noto CJK 重新提取)
 scripts/figgen/fonts/*.otf

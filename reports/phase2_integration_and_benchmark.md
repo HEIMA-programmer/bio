@@ -18,7 +18,7 @@
 
 **全流程一图**（本阶段就是把它跑出来）：
 
-![scAtlasVAE 整合效果（真实）](fig_phase2_integration_umap.svg)
+![scAtlasVAE 整合效果（真实）](figures/fig_phase2_integration_umap.png)
 
 *图 2-1 — **本机真实结果**（4 万 CD8 细胞）。上排未校正 X_pca、下排 scAtlasVAE；左列按癌种(batch)、右列按 17 个 CD8 亚型上色。可见整合后**癌种/批次更混合**、而 Tn/Tem/Temra/Tex 等**细胞类型仍分得开**——定量见 §7。*
 
@@ -164,7 +164,7 @@ python phase2_run_scatlasvae.py
 
 **实跑（本机 4 万细胞）**：`max_epoch=min(round(20000/39997·400),400)=200` 个 epoch（11 万细胞则≈73），4060 上约 **31 分钟**（~9.4 s/epoch）；loss 稳定下降、**无 NaN**；末尾 10 个 epoch（`pred_last_n_epoch`）开始训练分类头，曲线上能看到一个小台阶。训练曲线（真实）：
 
-![训练损失曲线（真实）](fig_phase2_loss_curve.svg)
+![训练损失曲线（真实）](figures/fig_phase2_loss_curve.png)
 
 *图 2-2 — 总损失/重构损失随 epoch 下降；右轴是 KL 权重的预热曲线。注意 λ_KL 在整个训练里从 0 线性爬到 ~1（因 `n_epochs_kl_warmup=min(max_epoch,400)` 被截断到 max_epoch）——[阶段 3 §8](phase3_reimplement_vae.md) 细讲，并纠正了旧稿"只到 0.18"的错。*
 
@@ -206,31 +206,32 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 
 **指标对比（真实，scib-metrics）**：
 
-![整合评测三种嵌入对比（真实）](fig_phase2_benchmark_bars.svg)
+![四方整合评测对比（真实）](figures/fig_phase2_benchmark_bars.png)
 
-*图 2-3 — 三种嵌入的批次校正/生物保留/总分（**本机 scib-metrics 实测**）。*
+*图 2-3 — 四种嵌入的批次校正/生物保留/总分（**本机 scib-metrics 实测**）。scAtlasVAE 分"无监督/监督"两根柱。*
 
 | 嵌入 | 批次校正 $S_{\text{batch}}$ | 生物保留 $S_{\text{bio}}$ | 总分 Overall |
 |---|---|---|---|
 | `X_pca`（未校正） | 0.27 | 0.37 | 0.33 |
 | `X_scVI` | 0.29 | 0.48 | 0.40 |
-| **`X_scAtlasVAE`** | **0.31** | **0.49** | **0.42** |
+| `X_scAtlasVAE_unsup`（无监督） | 0.30 | 0.48 | 0.41 |
+| **`X_scAtlasVAE_sup`（监督）** | **0.31** | **0.49** | **0.42** |
 
-（分项：scAtlasVAE 在 **isolated-labels=0.48、graph-connectivity=0.68** 两项最高；完整 13 列见 `phase2_benchmark_results.csv`。）
+> **重要更正（原稿的坑）**：早先这里只有一根 `X_scAtlasVAE` 柱，其实它**传了 `label_key`、是监督版**。补上无监督版后真相清楚了：**无监督 scAtlasVAE（0.41）≈ scVI（0.40）**、**监督版（0.42）才最高**——我们此前"略胜 scVI"的优势来自**半监督分类头**，而非整合骨架本身。完整四方对比与讨论见 [阶段 6 · E2](phase6_deeper_validation.md)。（完整 13 列见 `phase2_benchmark_results.csv`。）
 
 **怎么读这张表（相对排序 = 复现判据）**：
 
-- **相对排序与论文趋势一致**：**scAtlasVAE ≳ scVI ≫ 未校正 PCA**（总分 0.42 / 0.40 / 0.33）。两种 VAE 都明显校正了批次、总分远高于 PCA；scAtlasVAE 在批次校正(0.31 vs 0.29)与生物保留(0.49 vs 0.48)上都**略优于 scVI**——正对上论文 **Ext. Data Fig. 1** 的"scAtlasVAE 与 scVI 相当或略优"。
+- **相对排序与论文趋势一致**：**监督 scAtlasVAE > 无监督 scAtlasVAE ≈ scVI ≫ 未校正 PCA**。两种 VAE 都明显校正了批次、总分远高于 PCA——正对上论文 **Ext. Data Fig. 2a** 的"无监督与 scVI 相当、监督才明显胜出"。
 - PCA 的生物保留(0.37)其实不是它最差的项，它主要输在**批次校正**(0.27)——印证 §5"两类指标缺一不可"（一个不校正批次的方法，生物结构照样能保住，但批次混不开）。
-- **判成功看相对排序与量级，不是与论文绝对值对齐**（scib-metrics ≠ 旧 scib）。这次相对排序稳稳复现了。绝对分偏低是数据子集小、默认超参、以及 scib-metrics 口径不同所致，属正常。
-- **（附）第二基线 Harmony**：另用 [`phase2_baseline_harmony.py`](../scripts/phase2_baseline_harmony.py) 跑过 Harmony（线性迭代式校正），它批次混合项(iLISI/kBET)更激进、总分更高，但那是另一类方法；与"VAE 对 VAE"的 scVI 对照互补。想看四方对比把 `X_harmony` 加进 `phase2_benchmark_scib.py` 的 `EMBEDDINGS` 即可。
+- **判成功看相对排序与量级，不是与论文绝对值对齐**（scib-metrics ≠ 旧 scib，指标对照见 [阶段 6 · E5](phase6_deeper_validation.md)）。这次相对排序稳稳复现了。绝对分偏低是数据子集小、默认超参、以及 scib-metrics 口径不同所致，属正常。
+- **（附）第二基线 Harmony**：另用 [`phase2_baseline_harmony.py`](../scripts/phase2_baseline_harmony.py) 跑过 Harmony（线性迭代式校正），它批次混合项(iLISI/kBET)更激进、总分更高，但那是另一类方法；与"VAE 对 VAE"的 scVI 对照互补。想加进对比把 `X_harmony` 塞进 `phase2_benchmark_scib.py` 的 `EMBEDDINGS` 即可。
 
 **记录区（本机实测）**：
 ```
 数据：细胞数=39997  batch列=patient(45)  label列=cell_type(17 个 CD8 亚型)  基因=4000 HVG
 训练：scAtlasVAE epoch=200  最终总损失≈3.5e5（每 epoch 累加）  有无NaN=无  λ_KL 末值≈0.995
-指标（真实，总分）：X_pca=0.33 / X_scVI=0.40 / X_scAtlasVAE=0.42
-结论是否与论文趋势一致：是——scAtlasVAE ≳ scVI ≫ 未校正 PCA
+指标（真实，总分）：X_pca=0.33 / X_scVI=0.40 / scAtlasVAE(无监督)=0.41 / scAtlasVAE(监督)=0.42
+结论是否与论文趋势一致：是——监督 scAtlasVAE > 无监督 ≈ scVI ≫ 未校正 PCA
 ```
 
 ---

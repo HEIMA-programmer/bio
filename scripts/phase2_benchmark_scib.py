@@ -19,10 +19,14 @@ from scib_metrics.benchmark import Benchmarker
 PROC_PATH = "tcell_processed.h5ad"
 BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
-# 三个对照：X_pca(未校正) / X_scVI(经典 batch-variant VAE) / X_scAtlasVAE(本方法)。
-# scvi-tools 在本机 Windows 开启长路径(LongPathsEnabled)后可正常安装，故 baseline 用回 scVI
-# （scAtlasVAE 编码器 batch-invariant 的正牌对照）。Harmony 结果仍可选（见 phase2_baseline_harmony.py）。
-EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE"]
+# 阶段 6 · E2：四方对比，复现论文 Ext. Data Fig. 2a 把 scAtlasVAE 分"无监督/监督"两根柱的核心论点。
+#   X_pca              未校正基线
+#   X_scVI             经典 batch-variant VAE（编码器吃 batch）
+#   X_scAtlasVAE_unsup 无监督 scAtlasVAE（不带 label_key，纯整合）—— 预期 ≈ scVI
+#   X_scAtlasVAE_sup   监督 scAtlasVAE（带 label_key、半监督分类头）—— 预期最高
+# 旧名 X_scAtlasVAE 即监督版；--mode unsup 那趟已补别名 X_scAtlasVAE_sup。
+# Harmony 结果仍可选（见 phase2_baseline_harmony.py）。
+EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"]
 
 adata = sc.read_h5ad(PROC_PATH)
 

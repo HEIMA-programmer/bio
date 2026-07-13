@@ -2,7 +2,7 @@
 
 > 这是整套复现报告的入口。若你只先读一份，就读它。
 > **本文的目标**：不急着让你"照着做"，而是先带你**亲手探索两样东西——论文和代码仓库**，从中**自己得出**"这个项目在做什么、核心在哪、为什么复现路线是这条"。搞清楚这些，你后面每一步才不是盲跟。
-> **阅读顺序**：本文（总纲）→ [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [2](phase2_integration_and_benchmark.md) → [3 ★](phase3_reimplement_vae.md) → [4](phase4_ablation_studies.md) → [5](phase5_final_report.md)
+> **阅读顺序**：本文（总纲）→ [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [2](phase2_integration_and_benchmark.md) → [3 ★](phase3_reimplement_vae.md) → [4](phase4_ablation_studies.md) → [5](phase5_final_report.md) → [6 深入验证与扩展](phase6_deeper_validation.md)
 > **导航**：[知识框架 →](01_concepts_and_toolbox.md)　·　[索引](README.md)
 
 ---
@@ -43,9 +43,17 @@
 
 **你会看到什么**：把摘要和 Fig 1 连起来，一条科学故事就出来了：
 
-![论文的科学故事](fig_paper_story.svg)
+```mermaid
+flowchart LR
+    A["数据 (Fig 1a)<br/>68 studies · 961 样本 · 42 疾病<br/>CD8⁺ T 细胞 + 配对 TCR"] --> B["构建图谱<br/>115 万细胞<br/>统一参考 atlas"]
+    B --> C["18 个亚型<br/>无监督聚类 + 人工注释"]
+    C --> D["3 个耗竭 Tex 亚型<br/>GZMK⁺ / ITGAE⁺ / XBP1⁺"]
+    C --> E["TCR 克隆分析<br/>克隆扩增 · 跨亚型分享"]
+    C --> F["迁移注释 (Fig 1c③)<br/>新数据自动打标签"]
+    B -. "方法引擎 scAtlasVAE 贯穿全程" .- C
+```
 
-*图 0-1 — 读 Fig 1 得到的科学故事全景（本图由 [figgen](../scripts/figgen/) 程序生成，下同）。*
+*图 0-1 — 读 Fig 1 得到的科学故事全景：数据→图谱→18 亚型，再派生出 Tex 分型、TCR 克隆与迁移注释三类下游分析；scAtlasVAE 是让这一切成立的方法引擎。*
 
 - **数据（Fig 1a）**：作者从 **68 项研究、961 个样本、42 种疾病**里，收集人 **CD8⁺ T 细胞**的单细胞 RNA 测序数据，还带**配对的 TCR（T 细胞受体）**信息。
 - **构建图谱（Abstract）**：把它们整合成一张 **115 万细胞**的统一参考"地图"（atlas）。
@@ -81,9 +89,26 @@ find scAtlasVAE/scatlasvae -name '*.py' | xargs wc -l | sort -n | tail -20
 
 把这些按"和核心方法的距离"分三层，就是这张仓库地图：
 
-![仓库地图](fig_repo_map.svg)
+```mermaid
+flowchart TB
+    subgraph L1["核心（真正要精读）"]
+        A["<b>model/_gex_model.py</b> · 约 2156 行<br/>编码器 / 解码器 / ZINB / 损失 / 训练循环 全在这一个文件"]
+    end
+    subgraph L2["相关支撑（用到时翻）"]
+        B1["utils/_loss.py<br/>ZINB/KL/MMD 损失"]
+        B2["utils/_distributions.py<br/>ZINB 分布"]
+        B3["model/_primitives.py<br/>SAE/FC 积木"]
+        B4["preprocessing/_preprocess.py"]
+    end
+    subgraph L3["外围 / vendored（本次忽略）"]
+        C1["pipeline/ · tools/ · data/"]
+        C2["externals/taming/<br/>VQGAN，与单细胞无关"]
+        C3["externals/tabnet/<br/>可选编码器"]
+    end
+    L1 --> L2 --> L3
+```
 
-*图 0-2 — 仓库按重要性分三层：核心一个文件、若干支撑、大量可忽略的外围/vendored 代码。*
+*图 0-2 — 仓库按重要性分三层：核心其实只有 `_gex_model.py` 一个文件，若干支撑文件，大量可忽略的外围/vendored 代码。*
 
 **门道**（三个都值得你自己复核）：
 
@@ -106,9 +131,16 @@ find scAtlasVAE/scatlasvae -name '*.py' | xargs wc -l | sort -n | tail -20
 
 于是路线定为——**不追求把 115 万细胞的全图谱重跑一遍**（那是算力秀，学习价值低），而是**聚焦"整合 + 迁移"这台方法引擎，亲手把它的核心 VAE 从零重写一遍**，再用一份公开的中等规模真实数据验证它、并做消融看作者的设计选择是否必要。整条路线五个阶段：
 
-![复现全流程](fig_pipeline_overview.svg)
+```mermaid
+flowchart LR
+    S1["① 环境搭建<br/>摸清陌生库 · torch 换 cu118"] --> S2["② 端到端整合<br/>预处理→整合→评测 · scib-metrics"]
+    S2 --> S3["③ 核心 VAE 重写 ★<br/>手写最小 VAE · 对照官方源码"]
+    S3 --> S4["④ 消融实验<br/>每次只改一个旋钮"]
+    S4 --> S5["⑤ 汇总报告<br/>诚实声明局限"]
+    S5 --> S6["⑥ 深入验证与扩展<br/>迁移注释 · 监督vs无监督 · 批不变探针"]
+```
 
-*图 0-3 — 五阶段路线。第 3 阶段（手写核心 VAE）是全程重点。*
+*图 0-3 — 复现路线。第 3 阶段（手写核心 VAE）是全程重点；第 6 阶段是本轮新增的深入验证与扩展。*
 
 | 阶段 | 做什么 | 你会学到 | 首次遇到的包 | 产出物 | 对应论文 |
 |---|---|---|---|---|---|
@@ -117,6 +149,7 @@ find scAtlasVAE/scatlasvae -name '*.py' | xargs wc -l | sort -n | tail -20
 | **3 核心 VAE 从零重写** ★ | 带你逐行读 `_gex_model.py`，再对着它手写最小版 | VAE 全套；ZINB；KL 预热；**把论文公式/源码翻译成代码** | `torch.nn` `torch.distributions` | 手写模型 + "我的实现 vs 原实现"差异清单 | Fig 1b, Methods |
 | **4 消融实验** | 改一个设计旋钮，看结论怎么变 | 控制变量法；从"我复现了"到"我验证了作者为什么这么设计" | （复用上面） | 消融结果图/表 + 结论 | Ext. Data Fig 4 |
 | **5 汇总报告** | 整理成组会汇报稿 | 科学写作：诚实讲清做了/没做什么、为什么 | — | 最终报告 / slides | — |
+| **6 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 复现论文招牌能力、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
 
 > 你现在在**总纲**。这张地图会一直放在这里，随时回来看自己在哪、为什么在这。
 
@@ -167,7 +200,9 @@ find scAtlasVAE/scatlasvae -name '*.py' | xargs wc -l | sort -n | tail -20
 - **你（本地 RTX 4060 / Windows）**：装环境、下数据、跑训练和评测、把日志与图贴回来。
 - **一起**：看结果、决定下一步。
 
-> **为什么这么分工**：军师所在的机器只有 1 核 CPU、约 1GB 内存、无 GPU，跑不动 11 万细胞的训练；但它非常适合读代码、写代码、写报告、画图（本套 16 张配图就是它用 matplotlib 程序化生成的）。你的 4060 专门负责"真刀真枪地算"。这也落实了一条原则——**核心模型第一版最好你自己写，军师做 review**，否则 L2 的学习价值就没了。
+> **为什么这么分工**：军师所在的机器只有 1 核 CPU、约 1GB 内存、无 GPU，跑不动 11 万细胞的训练；但它非常适合读代码、写代码、写报告、画图。你的 4060 专门负责"真刀真枪地算"。这也落实了一条原则——**核心模型第一版最好你自己写，军师做 review**，否则 L2 的学习价值就没了。
+>
+> **关于配图**：报告里的**示意/流程/概念图**一律用 [Mermaid](https://mermaid.js.org/)（代码块内嵌，GitHub 原生渲染、零文件、可 diff）；**实验结果图**（UMAP、条形、曲线、混淆矩阵、探针）才落成 PNG，集中放 [`reports/figures/`](figures/)，由 [`figgen/build_real.py`](../scripts/figgen/build_real.py) 从真实实跑产物生成。这样既保住该有的实验图，又不让一堆 SVG 散落仓库。
 
 ---
 
