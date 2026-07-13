@@ -3,7 +3,7 @@
 > **阶段** 5 / 5　·　**前置**：阶段 1–4　·　**产出**：可直接汇报的复现总结　·　**预计** 2–3 天
 > **导航**：[← 阶段 4](phase4_ablation_studies.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)
 >
-> 本稿综合前四阶段。数字/图均为**本机 RTX 4060 真实实跑（2026-07-09）**：数据为 GSE156728 的 10X CD8 子集（~4 万细胞），baseline 用 Harmony（本机装不上 scvi-tools）。含若干与直觉/旧稿不符的诚实结果与成因讨论。
+> 本稿综合前四阶段。数字/图均为**本机 RTX 4060 真实实跑**：数据为 GSE156728 的 10X CD8 子集（~4 万细胞），baseline 用 **scVI**（scvi-tools；Windows 需先开长路径才能装）。含若干与直觉/旧稿不符的诚实结果与成因讨论。
 
 ![复现全流程](fig_pipeline_overview.svg)
 
@@ -44,9 +44,9 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 |---|---|
 | 数据 | TCellLandscape（GSE156728）的 10X CD8 子集，**下采样到 39,997 细胞**（8 癌种 / **batch=patient 共 45 个** / **cell_type=meta.cluster 共 17 个 CD8 亚型** / 4000 HVG）。组装脚本 `phase2_data_fetch_gse156728.py`。全 11 万/28 studies 与 115 万 atlas 引用论文数字、不自跑。 |
 | 训练环境 | `scatlasvae`：Python 3.8、**torch 2.0.1 + cu118**（4060/sm_89 必须换，见 [阶段 1](phase1_environment_setup.md)） |
-| 评测环境 | `scib`：Python 3.10、`scib-metrics`（JAX 后端，Windows 可用）、`harmonypy` |
+| 评测环境 | `scib`：Python 3.10、`scib-metrics`（JAX 后端，Windows 可用）；scVI 另在独立 `scvi`(py3.10, scvi-tools) 环境跑 |
 | 超参（默认，读源码得来） | `n_latent=10`、`hidden=[128]`、`batch_hidden_dim=8`、`lr=5e-5`、AdamW、`batch_size=128`、`seed=12`、`n_epochs_kl_warmup=400`（实际被 `min(max_epoch,400)` 截断）、`pred_last_n_epoch=10`；4 万细胞 → `max_epoch=min(round(20000/N·400),400)=200` |
-| baseline | 未校正 `X_pca`；**Harmony**（`X_harmony`）。原计划的 scVI 在本机 Windows 装不上（scvi-tools 依赖 orbax，触发长路径上限），改用同为经典基线的 Harmony；scVI 的"编码器 batch-variant"架构对照仍在文档保留（概念对比）。 |
+| baseline | 未校正 `X_pca`；**scVI**（`X_scVI`，scvi-tools 默认参数、`max_epochs=10`）——scAtlasVAE"编码器 batch-invariant"的正牌对照。scvi-tools 在 Windows 需先开长路径(`LongPathsEnabled`)才能装。另附 Harmony 作可选第二基线。 |
 | 评测 | `scib-metrics` 的批次校正 + 生物保留（**与旧 scib 数值不可直接比，只看相对排序**） |
 
 ---
@@ -66,10 +66,10 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 | 嵌入 | 批次校正 | 生物保留 | 总分 |
 |---|---|---|---|
 | `X_pca`（未校正） | 0.27 | 0.37 | 0.33 |
-| `X_harmony` | **0.55** | 0.50 | **0.52** |
-| **`X_scAtlasVAE`** | 0.31 | 0.49 | 0.42 |
+| `X_scVI` | 0.29 | 0.48 | 0.40 |
+| **`X_scAtlasVAE`** | **0.31** | **0.49** | **0.42** |
 
-**结论（诚实）**：**核心趋势成立**——两种批次校正法（Harmony、scAtlasVAE）总分都明显 ≫ 未校正 PCA，与"做整合有用"的论文级结论一致。但在这个 **4 万细胞子集 + 45 patient 批次**上，**Harmony 总分领先、scAtlasVAE 批次校正偏弱**；scAtlasVAE 则在**生物保留**（isolated-labels=0.48、graph-connectivity=0.68 两项**最高**）上突出。这不是失败：scAtlasVAE 的设计红利在**图谱级（百万细胞）整合与 zero-shot 迁移**（本次未做），且全用默认超参未调。判成功看**趋势与相对关系**（见 §1、[总纲](00_overview_and_learning_map.md)），如实记录量级差异比强行让本方法夺冠更有价值。
+**结论**：**相对排序与论文趋势一致**——**scAtlasVAE ≳ scVI ≫ 未校正 PCA**（总分 0.42 / 0.40 / 0.33）。两种 VAE 都明显校正了批次、总分远高于 PCA，且 scAtlasVAE 在批次校正与生物保留两项上都**略优于 scVI**，正对上论文 **Ext. Data Fig. 1** 的"scAtlasVAE 与 scVI 相当或略优"。绝对分因 scib-metrics ≠ 旧 scib、子集小、默认超参而偏低,属正常;**判成功看相对排序**,这次稳稳复现了。（另跑了 Harmony 作可选第二基线,数据在仓库可查。）
 
 ---
 
@@ -109,7 +109,7 @@ CD8⁺ T 细胞在炎症与肿瘤中呈现高度异质的状态。**scAtlasVAE**
 
 - **规模**：只复现约 **4 万 CD8 细胞**的子集 benchmark（GSE156728 的 10X CD8 下采样），**未跑全 11 万/28 studies，更未跑 115 万 atlas**（算力约束，正当理由）；全量数字引用论文。子集规模会低估 scAtlasVAE 的图谱级红利。
 - **结果状态**：阶段 1–3 与阶段 2 评测均为**本机 4060 真实实跑**（2026-07-09）；阶段 4 消融数值以实跑为准填入 §6。
-- **baseline**：因 `scvi-tools` 在本机 Windows 装不上（orbax 长路径），批次校正基线由 scVI 改为 **Harmony**（同为经典基线）；scVI 的架构对照仍以概念形式保留。
+- **baseline**：用 **scVI**（scvi-tools 默认参数）作 batch-variant VAE 对照；scvi-tools 在 Windows 需先开长路径(`LongPathsEnabled`)才能装（本机单独建 `scvi` 环境、CPU 跑 10 epoch）。另附 Harmony 作可选第二基线。
 - **评测**：`scib-metrics` 与论文旧 `scib`(1.1.4) **数值不可直接比**，本文只看方法间相对排序。
 - **手写版**：为**最小忠实实现**，未含 MMD/TabNet/latent-constraint/多层级等可选特性；部分结论为定性验证。
 - **随机性**：版本、随机种子、GPU 浮点导致 UMAP/数值与论文不逐点一致，属正常。

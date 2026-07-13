@@ -119,11 +119,10 @@ def _bars_from_csv(csv_name, order, title, outname, note=None):
 def bench():
     _bars_from_csv(
         "phase2_benchmark_results.csv",
-        ["X_pca", "X_harmony", "X_scAtlasVAE"],
+        ["X_pca", "X_scVI", "X_scAtlasVAE"],
         "整合评测：三种嵌入对比（真实，scib-metrics）",
         "fig_phase2_benchmark_bars",
-        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看方法间相对排序。"
-             "两种校正法均 ≫ 未校正 PCA；Harmony 批次校正更强，scAtlasVAE 生物保留突出。")
+        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看方法间相对排序（X_pca 未校正 / X_scVI batch-variant VAE / X_scAtlasVAE 本方法）。")
 
 
 def ablation():

@@ -33,7 +33,7 @@
 | 4 | 消融实验 | [phase4_ablation_studies.md](phase4_ablation_studies.md) | `phase4_ablations.py` · 2 图 |
 | 5 | 复现汇总报告（组会稿） | [phase5_final_report.md](phase5_final_report.md) | 引用全部图 |
 
-> **状态（2026-07-09 更新）**：阶段 1–3 与阶段 2 评测已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均已替换为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 因 Windows 装不上 scvi-tools 改用 Harmony）。阶段 4 消融按实跑结果填。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成。所有脚本在 [`../scripts/`](../scripts/)。
+> **状态（2026-07 更新）**：阶段 1–4 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均已替换为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成。所有脚本在 [`../scripts/`](../scripts/)。
 
 ---
 

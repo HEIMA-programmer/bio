@@ -4,14 +4,13 @@
     scVI 是"编码器 batch-variant"的经典 VAE（编码器吃 batch），
     正好作为 scAtlasVAE（编码器 batch-invariant）的对照（见 01 文档 §1.5）。
 
-⚠️ 本机（Windows）跑不了 —— 已改用 Harmony 基线
-    scvi-tools 依赖 JAX 生态的 orbax-checkpoint，其包内有超长路径的测试文件，
-    触发 Windows 260 字符路径上限（需管理员开 LongPathsEnabled 才能装）。为不改系统设置，
-    本次改用 phase2_baseline_harmony.py（Harmony，同样是经典批次校正基线）作为可跑的对照。
-    本脚本保留给能装 scvi-tools 的环境（Linux / 已开长路径的 Windows）参考。
-    scVI 与 scAtlasVAE 的"编码器是否看 batch"的**架构对照**仍在文档保留（概念对比，不依赖实跑）。
+Windows 安装小记
+    scvi-tools 依赖 JAX 生态的 orbax-checkpoint，包内有超长路径的测试文件，
+    在**未开长路径**的 Windows 上会触发 260 字符上限而装不上。解决：以管理员执行
+    `Set-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' -Name LongPathsEnabled -Value 1`，
+    重开终端后即可 `pip install scvi-tools`。本机据此单独建了 `scvi`(py3.10, CPU torch) 环境。
 
-用法（需装了 scvi-tools 的环境；本机不可用，见上）
+用法（在 `scvi` 环境中；CPU 上 10 epoch、4 万细胞几分钟）
     python phase2_baseline_scvi.py
 
 对应报告
