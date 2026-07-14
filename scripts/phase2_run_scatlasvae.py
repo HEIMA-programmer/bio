@@ -5,14 +5,14 @@
     python phase2_run_scatlasvae.py --stage train --mode unsup    # 无监督版 -> obsm['X_scAtlasVAE_unsup']
     python phase2_run_scatlasvae.py --stage umap                  # 近邻图/UMAP/Leiden + 出图
 
-关于 --mode（阶段 6 · E2）
+关于 --mode（阶段 5 · E2）
     论文 Ext. Data Fig. 2a 在同一份 Zheng 2021 数据上把 scAtlasVAE 分成"无监督"与"监督"两根柱：
     无监督 ≈ scVI、监督才明显胜出。我们最初那根 X_scAtlasVAE **传了 label_key、其实是监督版**。
     这里补一个 --mode unsup（构造模型时不传 label_key、只做整合不学分类头），
     以复现"监督 vs 无监督"的完整对比，并解释我们此前那点微弱优势的来源。
 
 对应报告
-    reports/phase2_integration_and_benchmark.md 步骤 4、6；reports/phase6_deeper_validation.md（E2）。
+    reports/phase2_integration_and_benchmark.md 步骤 4、6；reports/phase5_deeper_validation.md（E2）。
 """
 import argparse
 import numpy as np

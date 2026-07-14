@@ -2,7 +2,7 @@
 
 > 这是整套复现报告的入口。若你只先读一份，就读它。
 > **本文的目标**：不急着让你"照着做"，而是先带你**亲手探索两样东西——论文和代码仓库**，从中**自己得出**"这个项目在做什么、核心在哪、为什么复现路线是这条"。搞清楚这些，你后面每一步才不是盲跟。
-> **阅读顺序**：本文（总纲）→ [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [2](phase2_integration_and_benchmark.md) → [3 ★](phase3_reimplement_vae.md) → [4](phase4_ablation_studies.md) → [5](phase5_final_report.md) → [6 深入验证与扩展](phase6_deeper_validation.md)
+> **阅读顺序**：本文（总纲）→ [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [2](phase2_integration_and_benchmark.md) → [3 ★](phase3_reimplement_vae.md) → [4](phase4_ablation_studies.md) → [5 深入验证与扩展](phase5_deeper_validation.md) → [6 汇总](phase6_final_report.md)
 > **导航**：[知识框架 →](01_concepts_and_toolbox.md)　·　[索引](README.md)
 
 ---
@@ -136,11 +136,11 @@ flowchart LR
     S1["① 环境搭建<br/>摸清陌生库 · torch 换 cu118"] --> S2["② 端到端整合<br/>预处理→整合→评测 · scib-metrics"]
     S2 --> S3["③ 核心 VAE 重写 ★<br/>手写最小 VAE · 对照官方源码"]
     S3 --> S4["④ 消融实验<br/>每次只改一个旋钮"]
-    S4 --> S5["⑤ 汇总报告<br/>诚实声明局限"]
-    S5 --> S6["⑥ 深入验证与扩展<br/>迁移注释 · 监督vs无监督 · 批不变探针"]
+    S4 --> S5["⑤ 深入验证与扩展<br/>迁移注释 · 监督vs无监督 · 批不变探针"]
+    S5 --> S6["⑥ 汇总报告<br/>诚实声明局限（含深入验证摘要）"]
 ```
 
-*图 0-3 — 复现路线。第 3 阶段（手写核心 VAE）是全程重点；第 6 阶段是本轮新增的深入验证与扩展。*
+*图 0-3 — 复现路线。第 3 阶段（手写核心 VAE）是全程重点；第 5 阶段是深入验证与扩展、第 6 阶段汇总全部工作。*
 
 | 阶段 | 做什么 | 你会学到 | 首次遇到的包 | 产出物 | 对应论文 |
 |---|---|---|---|---|---|
@@ -148,8 +148,8 @@ flowchart LR
 | **2 端到端跑通** | 用真实数据 TCellLandscape 走完"预处理→整合→评测" | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `scvi-tools`(baseline) `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 |
 | **3 核心 VAE 从零重写** ★ | 带你逐行读 `_gex_model.py`，再对着它手写最小版 | VAE 全套；ZINB；KL 预热；**把论文公式/源码翻译成代码** | `torch.nn` `torch.distributions` | 手写模型 + "我的实现 vs 原实现"差异清单 | Fig 1b, Methods |
 | **4 消融实验** | 改一个设计旋钮，看结论怎么变 | 控制变量法；从"我复现了"到"我验证了作者为什么这么设计" | （复用上面） | 消融结果图/表 + 结论 | Ext. Data Fig 4 |
-| **5 汇总报告** | 整理成组会汇报稿 | 科学写作：诚实讲清做了/没做什么、为什么 | — | 最终报告 / slides | — |
-| **6 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 复现论文招牌能力、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
+| **5 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 复现论文招牌能力、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
+| **6 汇总报告** | 整理成组会汇报稿（含深入验证摘要） | 科学写作：诚实讲清做了/没做什么、为什么 | — | 最终报告 / slides | — |
 
 > 你现在在**总纲**。这张地图会一直放在这里，随时回来看自己在哪、为什么在这。
 

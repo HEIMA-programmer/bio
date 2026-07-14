@@ -19,7 +19,7 @@ from scib_metrics.benchmark import Benchmarker
 PROC_PATH = "tcell_processed.h5ad"
 BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
-# 阶段 6 · E2：四方对比，复现论文 Ext. Data Fig. 2a 把 scAtlasVAE 分"无监督/监督"两根柱的核心论点。
+# 阶段 5 · E2：四方对比，复现论文 Ext. Data Fig. 2a 把 scAtlasVAE 分"无监督/监督"两根柱的核心论点。
 #   X_pca              未校正基线
 #   X_scVI             经典 batch-variant VAE（编码器吃 batch）
 #   X_scAtlasVAE_unsup 无监督 scAtlasVAE（不带 label_key，纯整合）—— 预期 ≈ scVI

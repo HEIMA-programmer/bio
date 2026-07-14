@@ -1,4 +1,4 @@
-"""阶段六 · E3：批不变编码器的"实证探针"。
+"""阶段五 · E3：批不变编码器的"实证探针"。
 
 论点
     scAtlasVAE 的招牌是**编码器 batch-invariant**——`_gex_model.py:969-970` 把
@@ -13,13 +13,13 @@
     "我读到那行被注释" -> 升级成 "我测出来了"。
 
 用法
-    conda activate scatlasvae && python phase6_batch_invariance_probe.py --model scatlasvae
-    conda activate scvi       && python phase6_batch_invariance_probe.py --model scvi
+    conda activate scatlasvae && python phase5_batch_invariance_probe.py --model scatlasvae
+    conda activate scvi       && python phase5_batch_invariance_probe.py --model scvi
 产出
-    phase6_invariance_scatlasvae.csv / phase6_invariance_scvi.csv（各写一行指标）
-    phase6_invariance_z.npz（各模型 real/perm 的一小段 z，供画图）
+    phase5_invariance_scatlasvae.csv / phase5_invariance_scvi.csv（各写一行指标）
+    phase5_invariance_z.npz（各模型 real/perm 的一小段 z，供画图）
 对应报告
-    reports/phase6_deeper_validation.md（E3）。
+    reports/phase5_deeper_validation.md（E3）。
 """
 import argparse
 import numpy as np
@@ -36,7 +36,7 @@ SEED = 0
 
 def _save_z(tag, z_real, z_perm):
     """把一小段 z 存进共享 npz（供画图），保留已有其它模型的键。"""
-    path = "phase6_invariance_z.npz"
+    path = "phase5_invariance_z.npz"
     data = {}
     try:
         with np.load(path) as f:
@@ -92,7 +92,7 @@ def probe_scatlasvae():
         "max_abs_dz_none_batch": max_abs_none,   # 用 None batch 后的最大改变
         "mean_l2_drift_perm": mean_l2_perm,      # 打乱 batch 后 z 的平均 L2 漂移
     }])
-    row.to_csv("phase6_invariance_scatlasvae.csv", index=False)
+    row.to_csv("phase5_invariance_scatlasvae.csv", index=False)
     _save_z("scAtlasVAE", zr, zp)
     print(row.to_string(index=False))
     print(f"\n[结论] scAtlasVAE 编码器无视 batch：打乱 batch 后 max|Δq_mu| = {max_abs_perm:.3e}"
@@ -158,7 +158,7 @@ def probe_scvi():
 
     df = pd.DataFrame(rows)[["model", "encoder", "n_cells_probed",
                              "max_abs_dz_perm_batch", "max_abs_dz_none_batch", "mean_l2_drift_perm"]]
-    df.to_csv("phase6_invariance_scvi.csv", index=False)
+    df.to_csv("phase5_invariance_scvi.csv", index=False)
     print(df.to_string(index=False))
     print(f"\n[结论] scVI 默认编码器也不吃 batch(漂移≈{rows[0]['mean_l2_drift_perm']:.3f})；"
           f"仅当 encode_covariates=True 显式编码 batch 时 z 才漂移"

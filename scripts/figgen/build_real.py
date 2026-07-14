@@ -119,7 +119,7 @@ def _bars_from_csv(csv_name, order, title, outname, note=None):
 
 
 def bench():
-    # 阶段 6 · E2：四方对比（复现论文 Ext. Data Fig. 2a 的 无监督/监督 两根柱）。
+    # 阶段 5 · E2：四方对比（复现论文 Ext. Data Fig. 2a 的 无监督/监督 两根柱）。
     _bars_from_csv(
         "phase2_benchmark_results.csv",
         ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"],
@@ -129,19 +129,19 @@ def bench():
 
 
 def bench_minimal():
-    # 阶段 6 · E4：把手写最小 VAE 放上同一把标尺。
+    # 阶段 5 · E4：把手写最小 VAE 放上同一把标尺。
     _bars_from_csv(
-        "phase6_minimal_bench.csv",
+        "phase5_minimal_bench.csv",
         ["X_pca", "X_scVI", "X_scAtlasVAE_sup", "X_minimal"],
         "手写最小 VAE 上标尺：与 PCA / scVI / 官方监督版并列（真实，scib-metrics）",
-        "fig_phase6_minimal_bench",
+        "fig_phase5_minimal_bench",
         note="注：X_minimal = 从零手写的最小 scAtlasVAE。看它相对 PCA 与 scVI/官方落在哪，量化手写实现的水平。")
 
 
 def transfer():
-    """阶段 6 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。"""
+    """阶段 5 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。"""
     import pandas as pd
-    df = pd.read_csv(os.path.join(DATA_DIR, "phase6_transfer_results.csv"))
+    df = pd.read_csv(os.path.join(DATA_DIR, "phase5_transfer_results.csv"))
     metrics = [("accuracy", "Accuracy"), ("macro_f1", "macro-F1"), ("macro_ovr_auc", "macro OVR-AUC")]
     designs = {"A": "设计A(随机5%)", "B": "设计B(整癌种UCEC)"}
     mcol = {"scAtlasVAE (zero-shot)": PAL["encoder"]["ink"],
@@ -168,19 +168,19 @@ def transfer():
     fig.suptitle("注释迁移（Task 3）：zero-shot / full-shot / kNN 对照（真实）",
                  fontsize=13, fontweight="bold", y=1.02)
     fig.tight_layout()
-    _save(fig, "fig_phase6_transfer")
+    _save(fig, "fig_phase5_transfer")
 
 
 def invariance():
-    """阶段 6 · E3：批不变探针——打乱 batch 后潜向量漂移，scAtlasVAE≈0 vs scVI>0。"""
+    """阶段 5 · E3：批不变探针——打乱 batch 后潜向量漂移，scAtlasVAE≈0 vs scVI>0。"""
     import pandas as pd
     parts = []
-    for fn in ("phase6_invariance_scatlasvae.csv", "phase6_invariance_scvi.csv"):
+    for fn in ("phase5_invariance_scatlasvae.csv", "phase5_invariance_scvi.csv"):
         p = os.path.join(DATA_DIR, fn)
         if os.path.exists(p):
             parts.append(pd.read_csv(p))
     if not parts:
-        raise FileNotFoundError("phase6_invariance_*.csv")
+        raise FileNotFoundError("phase5_invariance_*.csv")
     df = pd.concat(parts, ignore_index=True)
     fig, ax = plt.subplots(figsize=(8.6, 4.7))
     models = list(df["model"]); drift = [float(v) for v in df["mean_l2_drift_perm"]]
@@ -198,7 +198,7 @@ def invariance():
            "scVI 默认也不编码(细节)，仅 encode_covariates=True 时才 batch-variant。")
     fig.text(0.5, -0.02, sub, ha="center", fontsize=8.2, color=MUTED)
     _clean(ax)
-    _save(fig, "fig_phase6_invariance")
+    _save(fig, "fig_phase5_invariance")
 
 
 def ablation():

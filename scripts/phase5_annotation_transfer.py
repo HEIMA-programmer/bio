@@ -1,4 +1,4 @@
-"""阶段六 · E1：注释迁移 / 自动标注（复现论文 Task 3 / Ext. Data Fig. 2g,h）。
+"""阶段五 · E1：注释迁移 / 自动标注（复现论文 Task 3 / Ext. Data Fig. 2g,h）。
 
 论文招牌能力
     训练好带分类头的参考模型后，query 数据可**不重训直接映射进参考图谱并自动标注**
@@ -17,13 +17,13 @@
     指标：accuracy、macro-F1、macro one-vs-rest ROC-AUC（论文指标）+ 混淆矩阵。
 
 用法（环境 A `scatlasvae`；sklearn 由 scanpy 依赖自带）
-    python phase6_annotation_transfer.py                          # 跑设计 A+B 全流程
-    python phase6_annotation_transfer.py --designs A --max-epoch 120
+    python phase5_annotation_transfer.py                          # 跑设计 A+B 全流程
+    python phase5_annotation_transfer.py --designs A --max-epoch 120
 产出
-    phase6_transfer_results.csv（每行 = 设计×方法 的 acc/F1/AUROC）
-    phase6_transfer_cm.npz（各配置的 y_true/y_pred，供画混淆矩阵）
+    phase5_transfer_results.csv（每行 = 设计×方法 的 acc/F1/AUROC）
+    phase5_transfer_cm.npz（各配置的 y_true/y_pred，供画混淆矩阵）
 对应报告
-    reports/phase6_deeper_validation.md（E1）。
+    reports/phase5_deeper_validation.md（E1）。
 """
 import argparse
 import os
@@ -40,8 +40,8 @@ LABEL_KEY = "cell_type"
 DROP_CANCER = "UCEC"        # 设计 B 留作 query 的癌种
 KNN_K = 13                  # 仿论文最近邻分类器
 SEED = 0
-RESULTS_CSV = "phase6_transfer_results.csv"
-CM_NPZ = "phase6_transfer_cm.npz"
+RESULTS_CSV = "phase5_transfer_results.csv"
+CM_NPZ = "phase5_transfer_cm.npz"
 
 
 # ---------- 指标 ----------

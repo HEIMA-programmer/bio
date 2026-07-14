@@ -17,7 +17,7 @@
 
 新手请按此顺序读，先建立框架再动手：
 
-**[总纲](00_overview_and_learning_map.md) → [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [阶段 2](phase2_integration_and_benchmark.md) → [阶段 3 ★](phase3_reimplement_vae.md) → [阶段 4](phase4_ablation_studies.md) → [阶段 5](phase5_final_report.md) → [阶段 6](phase6_deeper_validation.md)**
+**[总纲](00_overview_and_learning_map.md) → [知识框架](01_concepts_and_toolbox.md) → [阶段 1](phase1_environment_setup.md) → [阶段 2](phase2_integration_and_benchmark.md) → [阶段 3 ★](phase3_reimplement_vae.md) → [阶段 4](phase4_ablation_studies.md) → [阶段 5 深入验证](phase5_deeper_validation.md) → [阶段 6 汇总](phase6_final_report.md)**
 
 ---
 
@@ -31,8 +31,8 @@
 | 2 | 端到端跑通 + 整合评测 | [phase2_integration_and_benchmark.md](phase2_integration_and_benchmark.md) | `phase2_*.py` · 结果图 |
 | 3 ★ | 核心 VAE 从零重写（含源码逐行走读） | [phase3_reimplement_vae.md](phase3_reimplement_vae.md) | `minimal_scatlasvae.py` · `phase3_train_and_compare.py` |
 | 4 | 消融实验 | [phase4_ablation_studies.md](phase4_ablation_studies.md) | `phase4_ablations.py` |
-| 5 | 复现汇总报告（组会稿） | [phase5_final_report.md](phase5_final_report.md) | 引用全部图 |
-| 6 | 深入验证与扩展：注释迁移 / 监督vs无监督 / 批不变探针 / 手写VAE上标尺 / 指标对照 | [phase6_deeper_validation.md](phase6_deeper_validation.md) | `phase6_*.py` · 结果图 |
+| 5 | 深入验证与扩展：注释迁移 / 监督vs无监督 / 批不变探针 / 手写VAE上标尺 / 指标对照 | [phase5_deeper_validation.md](phase5_deeper_validation.md) | `phase5_*.py` · 结果图 |
+| 6 | 复现汇总报告（组会稿，含深入验证摘要） | [phase6_final_report.md](phase6_final_report.md) | 引用全部图 |
 
 > **状态（2026-07 更新）**：阶段 1–6 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。所有脚本在 [`../scripts/`](../scripts/)。
 

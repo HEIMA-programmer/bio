@@ -217,13 +217,13 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 | `X_scAtlasVAE_unsup`（无监督） | 0.30 | 0.48 | 0.41 |
 | **`X_scAtlasVAE_sup`（监督）** | **0.31** | **0.49** | **0.42** |
 
-> **重要更正（原稿的坑）**：早先这里只有一根 `X_scAtlasVAE` 柱，其实它**传了 `label_key`、是监督版**。补上无监督版后真相清楚了：**无监督 scAtlasVAE（0.41）≈ scVI（0.40）**、**监督版（0.42）才最高**——我们此前"略胜 scVI"的优势来自**半监督分类头**，而非整合骨架本身。完整四方对比与讨论见 [阶段 6 · E2](phase6_deeper_validation.md)。（完整 13 列见 `phase2_benchmark_results.csv`。）
+> **重要更正（原稿的坑）**：早先这里只有一根 `X_scAtlasVAE` 柱，其实它**传了 `label_key`、是监督版**。补上无监督版后真相清楚了：**无监督 scAtlasVAE（0.41）≈ scVI（0.40）**、**监督版（0.42）才最高**——我们此前"略胜 scVI"的优势来自**半监督分类头**，而非整合骨架本身。完整四方对比与讨论见 [阶段 5 · E2](phase5_deeper_validation.md)。（完整 13 列见 `phase2_benchmark_results.csv`。）
 
 **怎么读这张表（相对排序 = 复现判据）**：
 
 - **相对排序与论文趋势一致**：**监督 scAtlasVAE > 无监督 scAtlasVAE ≈ scVI ≫ 未校正 PCA**。两种 VAE 都明显校正了批次、总分远高于 PCA——正对上论文 **Ext. Data Fig. 2a** 的"无监督与 scVI 相当、监督才明显胜出"。
 - PCA 的生物保留(0.37)其实不是它最差的项，它主要输在**批次校正**(0.27)——印证 §5"两类指标缺一不可"（一个不校正批次的方法，生物结构照样能保住，但批次混不开）。
-- **判成功看相对排序与量级，不是与论文绝对值对齐**（scib-metrics ≠ 旧 scib，指标对照见 [阶段 6 · E5](phase6_deeper_validation.md)）。这次相对排序稳稳复现了。绝对分偏低是数据子集小、默认超参、以及 scib-metrics 口径不同所致，属正常。
+- **判成功看相对排序与量级，不是与论文绝对值对齐**（scib-metrics ≠ 旧 scib，指标对照见 [阶段 5 · E5](phase5_deeper_validation.md)）。这次相对排序稳稳复现了。绝对分偏低是数据子集小、默认超参、以及 scib-metrics 口径不同所致，属正常。
 - **（附）第二基线 Harmony**：另用 [`phase2_baseline_harmony.py`](../scripts/phase2_baseline_harmony.py) 跑过 Harmony（线性迭代式校正），它批次混合项(iLISI/kBET)更激进、总分更高，但那是另一类方法；与"VAE 对 VAE"的 scVI 对照互补。想加进对比把 `X_harmony` 塞进 `phase2_benchmark_scib.py` 的 `EMBEDDINGS` 即可。
 
 **记录区（本机实测）**：

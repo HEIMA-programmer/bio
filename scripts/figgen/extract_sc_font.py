@@ -1,6 +1,6 @@
 """【已弃用 DEPRECATED】从 Noto CJK .ttc 提取简体 SC 面为独立 OTF（曾供手绘 SVG 内嵌字体用）。
 
-自 2026-07（阶段 6 · F 项）起，手绘示意图已改为 Mermaid、不再导出 SVG，也就不再需要把
+自 2026-07（阶段 5 · F 项）起，手绘示意图已改为 Mermaid、不再导出 SVG，也就不再需要把
 字体转路径内嵌。结果图 PNG（build_real.py）用 theme.py 的 setup_cjk 直接调系统中文字体即可，
 本脚本弃用、保留仅作历史参考。
 

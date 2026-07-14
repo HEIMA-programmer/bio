@@ -1,4 +1,4 @@
-"""阶段六 · E4：把"从零手写的最小 VAE"放上同一把 scib 标尺。
+"""阶段五 · E4：把"从零手写的最小 VAE"放上同一把 scib 标尺。
 
 动机
     阶段三我们手写了 minimal_scatlasvae.py（批不变编码器 / 重参数化 / 批条件解码器 /
@@ -9,11 +9,11 @@
 对照
     X_pca(未校正) / X_scVI / X_scAtlasVAE_sup(官方监督) / X_minimal(手写)
 用法（环境 B `scib`，py3.10）
-    python phase6_bench_minimal.py
+    python phase5_bench_minimal.py
 产出
-    phase6_minimal_bench.csv
+    phase5_minimal_bench.csv
 对应报告
-    reports/phase6_deeper_validation.md（E4）与 reports/phase3_reimplement_vae.md。
+    reports/phase5_deeper_validation.md（E4）与 reports/phase3_reimplement_vae.md。
 """
 import scanpy as sc
 from scib_metrics.benchmark import Benchmarker
@@ -40,5 +40,5 @@ bm = Benchmarker(
 bm.benchmark()
 results = bm.get_results(min_max_scale=False)
 print(results)
-results.to_csv("phase6_minimal_bench.csv")
-print("完成：见 phase6_minimal_bench.csv")
+results.to_csv("phase5_minimal_bench.csv")
+print("完成：见 phase5_minimal_bench.csv")

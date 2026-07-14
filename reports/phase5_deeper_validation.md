@@ -1,7 +1,7 @@
-# 阶段 6 · 深入验证与扩展
+# 阶段 5 · 深入验证与扩展
 
-> **阶段** 6 / 6　·　**前置**：阶段 1–5　·　**产出**：把整合主线补全、复现论文招牌能力、并把观察升级为可测证据
-> **导航**：[← 阶段 5](phase5_final_report.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)
+> **阶段** 5 / 6　·　**前置**：阶段 1–4　·　**产出**：把整合主线补全、复现论文招牌能力、并把观察升级为可测证据
+> **导航**：[← 阶段 4](phase4_ablation_studies.md)　·　[阶段 6 汇总 →](phase6_final_report.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)
 >
 > 本阶段的所有数字/图均为**本机 RTX 4060 真实实跑**（数据为 GSE156728 的 10X CD8 子集 39,997 细胞 / batch=patient 共 45 个 / cell_type 共 17 个 CD8 亚型）。
 
@@ -58,7 +58,7 @@ flowchart LR
 
 **为什么值得做**：训练好带分类头的参考模型后，query 数据可**不重训直接映射进参考图谱并自动打标签**（zero-shot），也可与参考共训（full-shot）。这是论文 Fig 5 / Ext. Data Fig. 2g,h 的核心卖点，根就在"编码器只吃 X"（见 E3）。
 
-**做法**（脚本 `phase6_annotation_transfer.py`，官方范式见 `docs/source/gex_transfer.rst`）：两种 query 切法对标论文的 "drop 5% cells" 与 "drop one study"——
+**做法**（脚本 `phase5_annotation_transfer.py`，官方范式见 `docs/source/gex_transfer.rst`）：两种 query 切法对标论文的 "drop 5% cells" 与 "drop one study"——
 - **设计 A**：随机留出 5% 细胞为 query，其余为 reference。
 - **设计 B**：留出**一个整癌种**（UCEC）为 query，其余为 reference（更难的域外泛化）。
 
@@ -66,7 +66,7 @@ flowchart LR
 
 **结果（本机实测）**：
 
-![注释迁移结果](figures/fig_phase6_transfer.png)
+![注释迁移结果](figures/fig_phase5_transfer.png)
 
 | 设计 | 方法 | accuracy | macro-F1 | macro OVR-AUC |
 |---|---|---|---|---|
@@ -92,11 +92,11 @@ flowchart LR
 
 阶段 1/3 我们一直说 scAtlasVAE 的题眼是"编码器只吃 X、不看 batch"，证据是 `_gex_model.py:969-970` 那行"把 batch 拼进编码器输入"**被注释掉了**。这一阶段把它做成一个**可测的实验**。
 
-**做法**（脚本 `phase6_batch_invariance_probe.py`）：同一批细胞 X，分别用**真实 batch / 打乱 batch / 全 None** 过编码器，比较潜均值 q_mu 的改变。scAtlasVAE 在 scatlasvae 环境、scVI 在 scvi 环境各测一次（低层直接给编码器喂不同 batch 索引，最干净的证明）。
+**做法**（脚本 `phase5_batch_invariance_probe.py`）：同一批细胞 X，分别用**真实 batch / 打乱 batch / 全 None** 过编码器，比较潜均值 q_mu 的改变。scAtlasVAE 在 scatlasvae 环境、scVI 在 scvi 环境各测一次（低层直接给编码器喂不同 batch 索引，最干净的证明）。
 
 **结果（本机实测）**：
 
-![批不变探针](figures/fig_phase6_invariance.png)
+![批不变探针](figures/fig_phase5_invariance.png)
 
 | 编码器 | 打乱 batch 后 max\|Δz\| | 平均 L2 漂移 |
 |---|---|---|
@@ -116,7 +116,7 @@ flowchart LR
 
 **结果（本机实测）**：
 
-![手写VAE上标尺](figures/fig_phase6_minimal_bench.png)
+![手写VAE上标尺](figures/fig_phase5_minimal_bench.png)
 
 | 嵌入 | 批次校正 | 生物保留 | 总分 |
 |---|---|---|---|
@@ -164,4 +164,4 @@ flowchart LR
 
 ---
 
-> **导航**：[← 阶段 5](phase5_final_report.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)
+> **导航**：[← 阶段 4](phase4_ablation_studies.md)　·　[阶段 6 汇总 →](phase6_final_report.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)
