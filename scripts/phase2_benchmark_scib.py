@@ -30,11 +30,17 @@ EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"]
 
 adata = sc.read_h5ad(PROC_PATH)
 
+# pre_integrated_embedding_obsm_key="X_pca"：显式指定"未整合基线"用我们预处理算的 scaled-log PCA。
+#   若不传，Benchmarker 会对 adata.X 现算一次 PCA 当基线——但我们的 adata.X 是**原始计数**
+#   （预处理最后一行 adata.X=layers['counts']），scib-metrics 要求它是归一化数据。用原始计数 PCA 当
+#   基线会让 PCR comparison 对所有方法恒为 0（基线批次方差比整合后还低，(pre-post)<0 被 clip 成 0），
+#   并且会**覆盖** obsm['X_pca']（使 PCA 基线行其实是原始计数 PCA）。显式传 X_pca 同时修好这两点。
 bm = Benchmarker(
     adata,
     batch_key=BATCH_KEY,
     label_key=LABEL_KEY,
     embedding_obsm_keys=EMBEDDINGS,
+    pre_integrated_embedding_obsm_key="X_pca",
     n_jobs=-1,
 )
 bm.benchmark()

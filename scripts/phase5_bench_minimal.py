@@ -30,11 +30,14 @@ if missing:
     raise KeyError(f"缺少 obsm: {missing}（X_scAtlasVAE_sup 需先跑 phase2_run --mode unsup 补别名；"
                    f"X_minimal 需先跑 phase3_train_and_compare.py 写入）")
 
+# pre_integrated_embedding_obsm_key="X_pca"：见 phase2_benchmark_scib.py 的说明——
+#   修好 PCR comparison 恒为 0 且避免 obsm['X_pca'] 被原始计数 PCA 覆盖。
 bm = Benchmarker(
     adata,
     batch_key=BATCH_KEY,
     label_key=LABEL_KEY,
     embedding_obsm_keys=EMBEDDINGS,
+    pre_integrated_embedding_obsm_key="X_pca",
     n_jobs=-1,
 )
 bm.benchmark()

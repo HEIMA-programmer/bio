@@ -5,7 +5,7 @@
     （zero-shot），也可与参考共训（full-shot）。论文在 TCellLandscape 上给的对标数：
     drop 5% cells / drop one study 的 ROC-AUC ≈ 0.85–0.91（zero-shot 最高）。
 
-我们的复现（数据 = 我们那份 39,997 细胞的 GSE156728 子集）
+我们的复现（数据 = 我们那份 104,805 细胞的 GSE156728 全量 CD8 10X）
     两种 query 切法：
       设计 A：随机留出 5% 细胞为 query（对标 "drop 5% cells"）。
       设计 B：留出**一个整癌种**（默认 UCEC）为 query（对标 "drop one study"，更难的域外泛化）。
@@ -38,7 +38,7 @@ PROC_PATH = "tcell_processed.h5ad"
 BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
 DROP_CANCER = "UCEC"        # 设计 B 留作 query 的癌种
-KNN_K = 13                  # 仿论文最近邻分类器
+KNN_K = 13                  # 我们自设的 kNN 对照（"无专用预测头"控制；论文 Bench3 基线是 scPoli/scANVI/CellTypist，非 kNN）
 SEED = 0
 RESULTS_CSV = "phase5_transfer_results.csv"
 CM_NPZ = "phase5_transfer_cm.npz"

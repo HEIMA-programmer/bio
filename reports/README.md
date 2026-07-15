@@ -31,10 +31,10 @@
 | 2 | 端到端跑通 + 整合评测 | [phase2_integration_and_benchmark.md](phase2_integration_and_benchmark.md) | `phase2_*.py` · 结果图 |
 | 3 ★ | 核心 VAE 从零重写（含源码逐行走读） | [phase3_reimplement_vae.md](phase3_reimplement_vae.md) | `minimal_scatlasvae.py` · `phase3_train_and_compare.py` |
 | 4 | 消融实验 | [phase4_ablation_studies.md](phase4_ablation_studies.md) | `phase4_ablations.py` |
-| 5 | 深入验证与扩展：注释迁移 / 监督vs无监督 / 批不变探针 / 手写VAE上标尺 / 指标对照 | [phase5_deeper_validation.md](phase5_deeper_validation.md) | `phase5_*.py` · 结果图 |
+| 5 | 深入验证与扩展：Task1四方 / Task3注释迁移 / Task2跨图谱对齐 / 批不变探针 / 可扩展性 / 手写VAE上标尺 / 指标对照 | [phase5_deeper_validation.md](phase5_deeper_validation.md) | `phase5_*.py` · 结果图 |
 | 6 | 复现汇总报告（组会稿，含深入验证摘要） | [phase6_final_report.md](phase6_final_report.md) | 引用全部图 |
 
-> **状态（2026-07 更新）**：阶段 1–6 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均为**真实数据**（数据 = GSE156728 的 10X CD8 子集下采样至 ~4 万细胞；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。所有脚本在 [`../scripts/`](../scripts/)。
+> **状态（2026-07 更新）**：阶段 1–6 已在**本机 RTX 4060 上真实跑通**，各报告的「记录区」、指标表、结果图均为**真实数据**（数据 = GSE156728 的 10X CD8 **全量 ~10.5 万细胞**，与论文 TCellLandscape 同量级；baseline 用 scVI，scvi-tools 在 Windows 需先开长路径才能装，另附 Harmony 可选第二基线；Task 2 跨图谱另用 Yost 2019 GSE123813 作第二图谱）。真实产物见 `../data/`（h5ad/npz/csv，gitignore 不入库），真实结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。所有脚本在 [`../scripts/`](../scripts/)。
 
 ---
 

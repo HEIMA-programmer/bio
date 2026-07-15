@@ -270,6 +270,55 @@ def umap_integration():
     _save(fig, "fig_phase2_integration_umap")
 
 
+def scalability():
+    """可扩展性：训练时间 / 峰值显存 随细胞数增长（对标论文 Ext. Data Fig. 4e,f）。"""
+    import pandas as pd
+    df = pd.read_csv(os.path.join(DATA_DIR, "phase5_scalability.csv")).sort_values("n_cells")
+    n = df["n_cells"].values / 1000.0   # 千细胞
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.5))
+    # 左：时间
+    axes[0].plot(n, df["fit_seconds"].values, "o-", color=PAL["encoder"]["ink"], lw=2.2, ms=7)
+    axes[0].set_xlabel("训练细胞数（千）", fontsize=10)
+    axes[0].set_ylabel("固定 epoch 训练墙钟时间 (s)", fontsize=10)
+    axes[0].set_title("训练时间 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
+    # 右：显存
+    axes[1].plot(n, df["peak_gpu_mb"].values, "s-", color=PAL["accentB"]["ink"], lw=2.2, ms=7)
+    axes[1].set_xlabel("训练细胞数（千）", fontsize=10)
+    axes[1].set_ylabel("峰值显存 (MB)", fontsize=10)
+    axes[1].set_title("峰值显存 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
+    for ax in axes:
+        _clean(ax)
+        ax.set_xlim(0, n.max() * 1.08)
+    fig.suptitle("scAtlasVAE 可扩展性（本机 4060 实测，对标 Ext. Data Fig. 4e,f）",
+                 fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    _save(fig, "fig_phase5_scalability")
+
+
+def cross_atlas():
+    """Task 2：跨图谱标签对齐矩阵热图（Yost CD8 亚型 × Zheng 亚型，行归一化占比）。"""
+    import pandas as pd
+    M = pd.read_csv(os.path.join(DATA_DIR, "phase5_cross_atlas_alignment.csv"), index_col=0)
+    fig, ax = plt.subplots(figsize=(max(8.5, 0.55 * M.shape[1]), 0.7 * M.shape[0] + 2.2))
+    im = ax.imshow(M.values, aspect="auto", cmap="magma", vmin=0)
+    ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=90, fontsize=7)
+    ax.set_yticks(range(M.shape[0])); ax.set_yticklabels(M.index, fontsize=10)
+    # 每格标占比（>0.15 才标，避免糊）
+    for i in range(M.shape[0]):
+        for j in range(M.shape[1]):
+            v = M.values[i, j]
+            if v > 0.15:
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
+                        color="white" if v < 0.6 else "black")
+    ax.set_xlabel("Zheng 亚型（我们的图谱，meta.cluster）", fontsize=10)
+    ax.set_ylabel("Yost CD8 亚型", fontsize=10)
+    ax.set_title("Task 2 跨图谱标签对齐：每个 Yost 亚型的最近邻 Zheng 亚型分布（行归一化，真实）\n"
+                 "耗竭态 CD8_ex/CD8_ex_act → Tex，记忆 CD8_mem → Tem/Tm——生物学对上了",
+                 fontsize=10.5, fontweight="bold", pad=10)
+    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02, label="占比")
+    _save(fig, "fig_phase5_cross_atlas")
+
+
 def umap_compare():
     """官方 vs 手写 VAE 的 UMAP 对照（按细胞类型上色）。"""
     import scanpy as sc
@@ -288,10 +337,11 @@ if __name__ == "__main__":
     targets = sys.argv[1:] or ["all"]
     if "all" in targets:
         targets = ["loss", "bench", "ablation", "umap_integration", "umap_compare",
-                   "bench_minimal", "transfer", "invariance"]
+                   "bench_minimal", "transfer", "invariance", "scalability", "cross_atlas"]
     fns = {"loss": loss_curve, "bench": bench, "ablation": ablation,
            "umap_integration": umap_integration, "umap_compare": umap_compare,
-           "bench_minimal": bench_minimal, "transfer": transfer, "invariance": invariance}
+           "bench_minimal": bench_minimal, "transfer": transfer, "invariance": invariance,
+           "scalability": scalability, "cross_atlas": cross_atlas}
     for t in targets:
         if t in fns:
             try:

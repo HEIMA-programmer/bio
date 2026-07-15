@@ -1,9 +1,11 @@
 # 阶段 3 · 核心 VAE 从零重写（L2 ★ 全项目重点）
 
-> **阶段** 3 / 5　·　**前置**：[阶段 2 · 整合与评测](phase2_integration_and_benchmark.md)、[知识框架](01_concepts_and_toolbox.md)　·　**产出**：手写模型 `minimal_scatlasvae.py` + 差异清单　·　**预计** 5 天
+> **阶段** 3 / 6　·　**前置**：[阶段 2 · 整合与评测](phase2_integration_and_benchmark.md)、[知识框架](01_concepts_and_toolbox.md)　·　**产出**：手写模型 `minimal_scatlasvae.py` + 差异清单　·　**预计** 5 天
 > **导航**：[← 阶段 2](phase2_integration_and_benchmark.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)　·　[阶段 4 →](phase4_ablation_studies.md)
 >
-> **结果已为本机真实实跑（2026-07-09）**：手写最小 VAE 在 4 万 CD8 子集上训练，与官方实现做了定性(UMAP)+定量(kNN Jaccard)对照，记录区为真实数据。
+> **结果已为本机真实实跑**：手写最小 VAE 在 ~10.5 万 CD8 全量数据上训练，与官方实现做了定性(UMAP)+定量(kNN Jaccard)对照，记录区为真实数据。
+>
+> **关于本篇的源码行号**：下面走读用的行号是 scAtlasVAE **上游 pristine 源码**的行号。**打了 [阶段 1 §4.5](phase1_environment_setup.md) 的 `chunked_anndata` 补丁后**（它在文件头部加了 3 行 `try/except`），你本地工作副本里这些行号**整体 +3**——例如"编码器里被注释掉的 batch 注入行"pristine 是 966–967、你打完补丁后是 **969–970**（[阶段 5](phase5_deeper_validation.md) 用的就是后者）。看到 ±3 的偏差不必惊慌，函数就在附近。
 
 ---
 
@@ -239,8 +241,8 @@ def fit(self, max_epoch=None, n_per_batch=128, kl_weight=1.,
 
 **门道**（三个细节，都是报告素材）：
 
-1. **默认超参直接抄**：`AdamW` · `lr=5e-5` · `weight_decay=1e-6` · `n_per_batch=128`（批大小）· `random_seed=12`。训练轮数 `max_epoch` 若不指定，按论文公式 $\min(\mathrm{round}(20000/N)\times400,\ 400)$——**N≈110218 时约 73 个 epoch**。
-2. **KL 预热的"真相"**（北极星问题 4 的进阶答案，这一版**更正了旧报告的一处硬错**）：`fit` 签名里确实写着 `n_epochs_kl_warmup=400`，但**紧接着有一行**（源码约 1301 行）：`n_epochs_kl_warmup = min(max_epoch, n_epochs_kl_warmup)`。所以当 `max_epoch < 400`（本项目 4 万细胞 `max_epoch=200`；11 万细胞 `≈73`），预热长度被**截断成 max_epoch**，权重 `kl_weight = min(1, epoch/max_epoch)`——**λ_KL 恰好在整个训练里从 0 线性爬到 ~1、末轮达到 ~1**。旧报告说"只到 ≈0.18、从没到 1"是**漏读了这行 `min` 截断**（把预热当成固定 400）。含义仍然成立、只是量级要摆对：**早期 λ_KL 很小、重构（ZINB）主导，末期才升到满强度**——这个"先重构、后正则"的爬坡是有意为之。实跑的 λ_KL 曲线（见 phase2 图 2-2）正好实证了它爬到 ~1。**这条纠错本身就是"读源码要读全、别停在函数签名"的最佳教材。**
+1. **默认超参直接抄**：`AdamW` · `lr=5e-5` · `weight_decay=1e-6` · `n_per_batch=128`（批大小）· `random_seed=12`。训练轮数 `max_epoch` 若不指定，按论文公式 $\min(\mathrm{round}(20000/N)\times400,\ 400)$——**本项目 N=104,805 时 76 个 epoch**。
+2. **KL 预热的"真相"**（北极星问题 4 的进阶答案，这一版**更正了旧报告的一处硬错**）：`fit` 签名里确实写着 `n_epochs_kl_warmup=400`，但**紧接着有一行**（源码约 1304 行，打补丁后）：`n_epochs_kl_warmup = min(max_epoch, n_epochs_kl_warmup)`。所以当 `max_epoch < 400`（本项目 10.5 万细胞 `max_epoch=76`；细胞越多 epoch 越少），预热长度被**截断成 max_epoch**，权重 `kl_weight = min(1, epoch/max_epoch)`——**λ_KL 恰好在整个训练里从 0 线性爬到 ~1、末轮达到 ~1**。旧报告说"只到 ≈0.18、从没到 1"是**漏读了这行 `min` 截断**（把预热当成固定 400）。含义仍然成立、只是量级要摆对：**早期 λ_KL 很小、重构（ZINB）主导，末期才升到满强度**——这个"先重构、后正则"的爬坡是有意为之。实跑的 λ_KL 曲线（见 phase2 图 2-2）正好实证了它爬到 ~1。**这条纠错本身就是"读源码要读全、别停在函数签名"的最佳教材。**
 3. **`pred_last_n_epoch=10`**：分类头**只在最后 10 个 epoch 才重点训练**。为什么？**先让编码器把表示学好（前 60 多个 epoch 专心重构+整合），最后再学分类更稳**——先打地基、再盖楼。
 
 > **深入（可选）**：`fit`/`calculate_metric` 里还用了 `ThreadPoolExecutor` 预取下一个 batch（`_prepare_batch`）——纯工程优化，和方法无关，读到时知道"哦这是为了加速取数"即可，不必深究。
@@ -302,18 +304,18 @@ python phase3_train_and_compare.py
 
 ![官方 vs 手写 UMAP 对照（真实）](figures/fig_phase3_umap_compare.png)
 
-*图 3-4 — **真实对照**（按 17 个 CD8 亚型上色）。官方与手写最小版把**同一批主要亚型放到相似的区域**：红色 Temra 在右、绿色 Tem 居中、蓝色 Tn 在底、紫/淡紫的 Tk/Trm 在左上——**结构趋势高度一致**。kNN 邻域平均 Jaccard=**0.235**。*
+*图 3-4 — **真实对照**（按 17 个 CD8 亚型上色）。官方与手写最小版把**同一批主要亚型放到相似的区域**：红色 Temra 在右、绿色 Tem 居中、蓝色 Tn 在底、紫/淡紫的 Tk/Trm 在左上——**结构趋势高度一致**。kNN 邻域平均 Jaccard=**0.233**（~10.5 万全量；与 4 万子集时的 0.235 几乎一致，跨规模稳定）。*
 
-**记录区（本机实测 2026-07-09）**：
+**记录区（本机实测，~10.5 万全量）**：
 ```
-手写版训练 epoch=200  最终loss≈1362（每细胞，.mean 归一）  有无NaN=无  λ_KL 末值=1.00
-官方 vs 手写 kNN Jaccard=0.235
+手写版训练 epoch=76（自动=min(round(20000/N·400),400)）  最终loss≈1198（每细胞，.mean 归一）  有无NaN=无  λ_KL 末值=1.00
+官方 vs 手写 kNN Jaccard=0.233
 UMAP 定性：主要亚型是否都分开=是（Tn/Tem/Temra/Tk/Trm/Tex 各成区，且与官方对应）   批次是否混开=是（继承 batch-invariant 编码器）
 ```
 
-> **怎么读 Jaccard=0.235（诚实）**：它比旧稿"示意"的 0.4–0.6 低。但 ① **远高于随机**（k=30、4 万细胞时随机期望≈30/40000≈7e-4），说明两套嵌入抓到的是**同一套结构**；② kNN Jaccard 是**很严格的局部指标**——只要两套实现对"谁是第 30 个近邻"稍有分歧就掉分，而**图 3-4 的定性一致才是复现成功的直接证据**；③ 手写版**刻意省掉了**类频率加权 CE、门控稀疏损失、FCLayer 式 batch 嵌入、验证/早停等（见 §11 差异清单）——这些都会让局部邻域与官方产生偏差。判成功看**趋势/结构一致**（[总纲](00_overview_and_learning_map.md)），这一条达成了。
+> **怎么读 Jaccard=0.233（诚实）**：它比旧稿"示意"的 0.4–0.6 低。但 ① **远高于随机**（k=30、10.5 万细胞时随机期望≈30/104805≈3e-4），说明两套嵌入抓到的是**同一套结构**；② kNN Jaccard 是**很严格的局部指标**——只要两套实现对"谁是第 30 个近邻"稍有分歧就掉分，而**图 3-4 的定性一致才是复现成功的直接证据**；③ 手写版**刻意省掉了**类频率加权 CE、门控稀疏损失、FCLayer 式 batch 嵌入、验证/早停等（见 §11 差异清单）——这些都会让局部邻域与官方产生偏差。判成功看**趋势/结构一致**（[总纲](00_overview_and_learning_map.md)），这一条达成了。
 
-> **补一个定量背书（阶段 5 · E4）**：光有"定性一致 + Jaccard"还不够硬。[阶段 5](phase5_deeper_validation.md) 把手写版产出的 `X_minimal` 放上**和官方同一把 scib-metrics 标尺**打分：**总分 0.403，与官方 scvi-tools 的 scVI（0.402）打平**、生物保留（0.482）甚至微超，离官方监督版 scAtlasVAE（0.415）也很近。一个刻意最小化的手写实现能到 scVI 同档，是"论文公式→代码翻译对了"最直接的量化证据。
+> **补一个定量背书（阶段 5 · E4）**：光有"定性一致 + Jaccard"还不够硬。[阶段 5](phase5_deeper_validation.md) 把手写版产出的 `X_minimal` 放上**和官方同一把 scib-metrics 标尺**打分（~10.5 万全量、PCR 基线已修）：**总分 0.406，落在未校正 PCA(0.400) 与 scVI(0.416) 之间、约等于无监督 scAtlasVAE(0.404)**。一个刻意最小化的手写实现能达到"无监督整合 VAE"同档，是"论文公式→代码翻译对了"最直接的量化证据。
 
 ---
 

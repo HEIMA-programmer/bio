@@ -49,7 +49,7 @@ def train(supervised: bool = True):
     if supervised:
         # 记录 λ_KL 的真实预热轨迹：源码 fit() 里 n_epochs_kl_warmup=min(max_epoch,400)，
         # 权重每个 epoch 末 +1/warmup，故第 e 个 epoch（0-indexed）实际用的权重 = e/warmup。
-        # 对 4 万细胞 max_epoch≈73<400 → warmup=73 → λ_KL 全程 0→~1（**证伪旧文档"只到0.18"的说法**）。
+        # 对 ~10.5 万细胞 max_epoch≈76<400 → warmup=76 → λ_KL 全程 0→~1（**证伪旧文档"只到0.18"的说法**）。
         n_epoch = len(history["epoch_total_loss_list"])
         warmup = min(n_epoch, 400)
         kl_weight = np.minimum(1.0, np.arange(n_epoch) / warmup)

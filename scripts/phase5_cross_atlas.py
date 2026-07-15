@@ -1,0 +1,226 @@
+"""阶段五 · Task 2：跨图谱整合 + 标签对齐（对标论文 Ext. Data Fig. 3）。
+
+论文的 Task 2
+    把两个**各自独立注释**的 CD8 图谱联合整合，并借 scAtlasVAE 独有的**多分类头**
+    把两套标签体系**并行对齐**。这是 scVI/scPoli 等做不到的（它们只整合、不对齐标签）。
+
+我们的复现
+    图谱 1 = 我们的 TCellLandscape（Zheng/GSE156728，~10.5 万 CD8，meta.cluster 17 亚型）。
+    图谱 2 = Yost 2019 BCC（GSE123813，10X，CD8 亚型 CD8_act/eff/ex/ex_act/mem）——
+             真实、独立、且本身就是论文 28 studies 之一，是货真价实的跨研究/跨癌种挑战。
+    做法：合并两图谱，batch=[patient, atlas]（atlas 作附加批次），
+          label=[ct_zheng, ct_yost]（两个分类头，各只在本图谱有标签的细胞上训练；
+          另一图谱的细胞该列置 'undefined'）。训练后：
+      (1) 跨图谱整合质量：两图谱在潜空间是否混合（atlas silhouette，越低越混）。
+      (2) 标签对齐：在共享潜空间里，每个 Yost CD8 亚型的最近邻 Zheng 细胞多属于哪个 Zheng 亚型，
+          得到 Yost×Zheng 对齐矩阵（预期 CD8_ex↔Tex.*、CD8_mem↔Tm.* 等）。
+      与 PCA 基线对比，说明"整合+对齐"确实来自模型而非平凡最近邻。
+
+用法（环境 A `scatlasvae`）
+    python phase5_cross_atlas.py                 # 默认全量 Zheng + Yost CD8
+    python phase5_cross_atlas.py --zheng-n 40000 # 想更快就下采样 Zheng
+产出
+    phase5_cross_atlas_mixing.csv     ：各嵌入的 atlas 混合度（silhouette）
+    phase5_cross_atlas_alignment.csv  ：Yost 亚型 × Zheng 亚型 的对齐矩阵（行归一化占比）
+    phase5_cross_atlas.npz            ：X_cross / X_pca_cross / atlas / 两套标签（供画 UMAP）
+对应报告
+    reports/phase5_deeper_validation.md（Task 2 一节）。
+"""
+import argparse
+import gzip
+import os
+import numpy as np
+import pandas as pd
+import scanpy as sc
+from scipy.sparse import csr_matrix, vstack
+from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
+
+RAW_ZHENG = "TCellLandscape_raw.h5ad"          # 我们的全量 raw（105k × 24148）
+YOST_META = "GSE123813_bcc_tcell_metadata.txt.gz"
+YOST_COUNTS = "GSE123813_bcc_scRNA_counts.txt.gz"
+YOST_CD8 = ["CD8_act", "CD8_eff", "CD8_ex", "CD8_ex_act", "CD8_mem"]
+N_HVG = 4000
+UNDEF = "undefined"
+SEED = 0
+
+
+# ---------- 载入 Yost BCC CD8（流式，内存安全）----------
+def load_yost_cd8():
+    cache = "yost_cd8.h5ad"
+    if os.path.exists(cache):                          # 缓存命中：秒载（避免每次重解析 100MB counts）
+        ad = sc.read_h5ad(cache)
+        print(f"  Yost CD8 (缓存): {ad.n_obs} 细胞 × {ad.n_vars} 基因；亚型 {sorted(set(ad.obs['ct_yost']))}")
+        return ad
+    meta = pd.read_csv(YOST_META, sep="\t").set_index("cell.id")
+    meta = meta[meta["cluster"].isin(YOST_CD8)]
+    keep_set = set(meta.index)
+    # 该 counts 是 R write.table(rownames) 格式：表头只有 53030 个 cell 名（无基因列表头），
+    # 数据行 = 基因名 + 53030 个值。故 header 全是 cell；用 index_col=0 让 pandas 把首列(基因)作索引，
+    # 其余列对齐表头(cells)。分块读、每块按名取 CD8 列（保序）。
+    with gzip.open(YOST_COUNTS, "rt") as f:
+        header = f.readline().rstrip("\n").split("\t")
+    # 数据行 = 基因名 + 53030 个值：字段位置 0=基因，位置 i+1 对应 header[i](cell)。
+    # 只读 基因列(0) + CD8 细胞列（positional usecols），避免读全部 5.3 万列（快 ~4 倍、省内存）。
+    keep_positions = [0] + [i + 1 for i, c in enumerate(header) if c in keep_set]
+    cd8_cells = [c for c in header if c in keep_set]        # 与所读列同序(file order)
+    gene_names, blocks = [], []
+    for chunk in pd.read_csv(YOST_COUNTS, sep="\t", header=None, skiprows=1,
+                             usecols=keep_positions, chunksize=2000):
+        chunk = chunk.set_index(chunk.columns[0])          # 首列=基因
+        gene_names.extend(chunk.index.astype(str).tolist())
+        blocks.append(csr_matrix(chunk.values.astype(np.float32)))
+    mat = vstack(blocks).tocsr()                 # 基因 × CD8细胞
+    gn = pd.Index(gene_names)
+    dup = gn.duplicated(keep="first")
+    if dup.any():
+        mat = mat[np.where(~dup)[0]]; gn = gn[~dup]
+    ad = sc.AnnData(X=csr_matrix(mat.T))          # 细胞 × 基因
+    ad.obs_names = cd8_cells
+    ad.var_names = gn.astype(str)
+    m = meta.reindex(cd8_cells)
+    ad.obs["patient"] = ("yost_" + m["patient"].astype(str)).values
+    ad.obs["ct_yost"] = m["cluster"].astype(str).values
+    ad.obs["ct_zheng"] = UNDEF                     # 另一图谱的标签列置 undefined（多头训练用）
+    ad.obs["atlas"] = "Yost"
+    ad.write_h5ad(cache)                            # 缓存，供下次秒载
+    print(f"  Yost CD8: {ad.n_obs} 细胞 × {ad.n_vars} 基因；亚型 {sorted(set(ad.obs['ct_yost']))}")
+    return ad
+
+
+def load_zheng(zheng_n):
+    ad = sc.read_h5ad(RAW_ZHENG)
+    if zheng_n and ad.n_obs > zheng_n:                # 可选下采样（分层 patient）
+        rng = np.random.default_rng(SEED); frac = zheng_n / ad.n_obs; idx = []
+        for _, g in ad.obs.groupby("patient", observed=True):
+            k = max(1, int(round(len(g) * frac))); idx.extend(rng.choice(g.index, min(k, len(g)), replace=False))
+        ad = ad[np.array(idx)].copy()
+    ad.obs["patient"] = ("zheng_" + ad.obs["patient"].astype(str)).values
+    ad.obs["ct_zheng"] = ad.obs["cell_type"].astype(str).values
+    ad.obs["ct_yost"] = UNDEF                       # 另一图谱标签列置 undefined
+    ad.obs["atlas"] = "Zheng"
+    ad.obs = ad.obs[["patient", "ct_zheng", "ct_yost", "atlas"]].copy()   # 只留需要的列，concat 干净
+    print(f"  Zheng: {ad.n_obs} 细胞 × {ad.n_vars} 基因")
+    return ad.copy()
+
+
+def alignment_matrix(Z, atlas, ct_zheng, ct_yost, k=30):
+    """在共享潜空间里，用 Yost 细胞的 kNN（限定在 Zheng 细胞中）投出 Yost×Zheng 对齐矩阵。"""
+    zmask = atlas == "Zheng"; ymask = atlas == "Yost"
+    nn = NearestNeighbors(n_neighbors=k).fit(Z[zmask])
+    _, idx = nn.kneighbors(Z[ymask])
+    zlab = ct_zheng[zmask]
+    ylab = ct_yost[ymask]
+    yost_types = sorted(set(ylab)); zheng_types = sorted(set(zlab))
+    M = pd.DataFrame(0.0, index=yost_types, columns=zheng_types)
+    for i, yt in enumerate(ylab):
+        neigh = zlab[idx[i]]
+        for zt in neigh:
+            M.loc[yt, zt] += 1
+    M = M.div(M.sum(1), axis=0)                        # 行归一化=每个 Yost 亚型的 Zheng 邻居分布
+    return M
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--zheng-n", type=int, default=0, help="Zheng 下采样(0=全量)")
+    ap.add_argument("--max-epoch", type=int, default=0, help="0=自动 min(round(20000/N*400),400)")
+    ap.add_argument("--batch-hidden-dim", type=int, default=10,
+                    help="批嵌入维度（论文 Ext.Fig.4b 默认 64；跨图谱硬 batch 可能需要更大容量）")
+    ap.add_argument("--lr", type=float, default=5e-5,
+                    help="学习率（默认 5e-5；全量多头在高 KL 权重末期会梯度爆炸致 q_mu=NaN，"
+                         "调到 3e-5 可稳住——见报告 Task 2 踩坑）")
+    args = ap.parse_args()
+
+    print("载入两个图谱...")
+    yost = load_yost_cd8()
+    zheng = load_zheng(args.zheng_n)
+
+    # 共享基因
+    common = sorted(set(zheng.var_names) & set(yost.var_names))
+    print(f"共享基因 {len(common)} 个")
+    zheng = zheng[:, common].copy(); yost = yost[:, common].copy()
+
+    # 合并 + 两套标签列（另一图谱置 undefined）
+    merged = sc.concat([zheng, yost], join="inner", index_unique="-")
+    # 两个 adata 都已带 ct_zheng/ct_yost（本图谱真值 + 另一图谱 undefined），concat 后直接转 categorical
+    for col in ("ct_zheng", "ct_yost", "atlas", "patient"):
+        merged.obs[col] = pd.Categorical(merged.obs[col].astype(str).values)
+    print(f"合并：{merged.shape}  atlas 分布={dict(pd.Series(merged.obs['atlas']).value_counts())}")
+
+    # 兜底非零 + int32 raw
+    merged = merged[np.asarray(merged.X.sum(1)).ravel() > 0].copy()
+    merged.layers["counts"] = csr_matrix(merged.X, dtype=np.int32)
+
+    # HVG（在合并数据上，供 PCA 基线；scAtlasVAE 直接吃 counts 全基因也行，这里裁到 HVG 提速）
+    tmp = merged.copy()
+    sc.pp.normalize_total(tmp, target_sum=1e4); sc.pp.log1p(tmp)
+    sc.pp.highly_variable_genes(tmp, n_top_genes=N_HVG, batch_key="atlas")
+    hvg = tmp.var_names[tmp.var["highly_variable"]].tolist()
+    merged = merged[:, hvg].copy()                    # 子集 layers['counts'] 也随之裁到 HVG
+    merged.X = csr_matrix(merged.layers["counts"], dtype=np.int32)   # scAtlasVAE 吃原始计数
+
+    # PCA 基线（未校正）
+    tmp2 = merged.copy(); sc.pp.normalize_total(tmp2, target_sum=1e4); sc.pp.log1p(tmp2)
+    sc.pp.scale(tmp2, max_value=10); sc.tl.pca(tmp2, n_comps=50)
+    merged.obsm["X_pca_cross"] = tmp2.obsm["X_pca"][:, :50]
+    del tmp, tmp2
+
+    # 训练 scAtlasVAE 多头（batch=[patient,atlas]，label=[ct_zheng,ct_yost]）
+    import scatlasvae
+    N = merged.n_obs
+    max_epoch = args.max_epoch or int(min(round(20000 / N * 400), 400))
+    print(f"训练 scAtlasVAE 跨图谱多头：N={N}, max_epoch={max_epoch}")
+    m = scatlasvae.model.scAtlasVAE(
+        adata=merged,
+        batch_key=["patient", "atlas"],
+        label_key=["ct_zheng", "ct_yost"],
+        batch_embedding="embedding", batch_hidden_dim=args.batch_hidden_dim, device="cuda:0",
+    )
+    m.fit(max_epoch=max_epoch, pred_last_n_epoch=max_epoch, lr=args.lr)
+    merged.obsm["X_cross"] = m.get_latent_embedding()
+
+    # ---- 评估 ----
+    atlas = merged.obs["atlas"].astype(str).values
+    ctz = merged.obs["ct_zheng"].astype(str).values
+    cty = merged.obs["ct_yost"].astype(str).values
+
+    # (1) atlas 混合度：用两个**对类别不平衡稳健**的指标。
+    #   ⚠️ 直接对全体做 silhouette 会被多数图谱主导而误导：Yost 仅占 ~10%，
+    #      原始 silhouette 甚至会让 scAtlasVAE 看着比 PCA 差（其实是不平衡假象）。故改用：
+    #   a. **平衡子采样**的 atlas silhouette（等量 Yost/Zheng，越低=越混）
+    #   b. **Yost 细胞 30-NN 中 Zheng 占比**（越高=两图谱越混；理想≈Zheng 全局占比）——最稳健
+    rng = np.random.default_rng(SEED)
+    zi = np.where(atlas == "Zheng")[0]; yi = np.where(atlas == "Yost")[0]
+    kbal = min(len(yi), 3000)
+    bal = np.concatenate([rng.choice(zi, kbal, replace=False), rng.choice(yi, kbal, replace=False)])
+    ideal = float((atlas == "Zheng").mean())
+    rows = []
+    for name, key in [("scAtlasVAE 跨图谱", "X_cross"), ("PCA(未校正)", "X_pca_cross")]:
+        X = merged.obsm[key]
+        sil_bal = silhouette_score(X[bal], atlas[bal])
+        nn = NearestNeighbors(n_neighbors=31).fit(X); _, idx = nn.kneighbors(X[yi])
+        frac_zheng = float((atlas[idx[:, 1:]] == "Zheng").mean())
+        rows.append({"embedding": name,
+                     "atlas_silhouette_balanced_lower_is_more_mixed": round(float(sil_bal), 4),
+                     "yost_nn_frac_zheng_higher_is_more_mixed": round(frac_zheng, 4)})
+        print(f"  [{name}] balanced silhouette={sil_bal:.4f}（越低越混） | "
+              f"Yost 30-NN 中 Zheng={frac_zheng:.3f}（理想≈{ideal:.2f}）")
+    pd.DataFrame(rows).to_csv("phase5_cross_atlas_mixing.csv", index=False)
+
+    # (2) 标签对齐矩阵（scAtlasVAE 潜空间）
+    M = alignment_matrix(merged.obsm["X_cross"], atlas, ctz, cty, k=30)
+    M.to_csv("phase5_cross_atlas_alignment.csv")
+    print("\nYost×Zheng 对齐矩阵（每个 Yost 亚型的最近邻 Zheng 亚型 top3）：")
+    for yt in M.index:
+        top = M.loc[yt].sort_values(ascending=False).head(3)
+        print(f"  {yt:12s} -> " + ", ".join(f"{z}({p:.2f})" for z, p in top.items()))
+
+    np.savez("phase5_cross_atlas.npz",
+             X_cross=merged.obsm["X_cross"], X_pca_cross=merged.obsm["X_pca_cross"],
+             atlas=atlas, ct_zheng=ctz, ct_yost=cty)
+    print("\n完成：phase5_cross_atlas_{mixing,alignment}.csv 与 .npz")
+
+
+if __name__ == "__main__":
+    main()
