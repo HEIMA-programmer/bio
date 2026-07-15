@@ -1,0 +1,5 @@
+design,kind,accuracy,macro_f1,macro_ovr_auc
+A,transductive(full-data scVI),0.6406,0.5103,0.9053
+A,fair-inductive(ref-only+project(no surgery)),0.6422,0.5113,0.8977
+B,transductive(full-data scVI),0.5308,0.3771,0.8133
+B,fair-inductive(ref-only+scArches surgery),0.5269,0.3732,0.8096

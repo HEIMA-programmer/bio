@@ -130,7 +130,7 @@ flowchart LR
 
 阶段 5 把整合主线补到"Task 1 完整 + Task 3"，并把关键观察升级为可测证据（完整见 [阶段 5 报告](phase5_deeper_validation.md)）：
 
-**① 注释迁移（Task 3，论文招牌能力）**：参考集监督训练后，query 数据 zero-shot 自动打标签。**用论文协议**（分类头训末 10 轮，`--protocol paper`）两种切法的 zero-shot ROC-AUC——随机留 5%=**0.888**、留整个癌种(UCEC)=**0.848**，双双落在论文 Ext. Data Fig. 2g,h / Supp Table 3 的区间、**比论文 TCellLandscape 的 0.905/0.859 略低 0.01–0.02（波动内）**——忠实复现、非超越。（此前"分类头全程训练"跑出的 0.939/0.903 是**超出论文协议的过训练上限**，本轮复查已更正为对照——详见 [阶段 5 · E1](phase5_deeper_validation.md)。）对 kNN 基线**分场景**：难案例 B 上分类头胜（0.848 > kNN 0.813，跨域泛化是专用头价值所在）、易案例 A 上 kNN 略胜（0.905 > 0.888，随机切分 kNN 占同病人近邻便宜）；raw accuracy 两案例都是 kNN 高，AUROC（论文指标）才公平。zero-shot ≈ full-shot（0.888 vs 0.898），印证"不必共训"。
+**① 注释迁移（Task 3，论文招牌能力）**：参考集监督训练后，query 数据 zero-shot 自动打标签。**用论文协议**（分类头训末 10 轮，`--protocol paper`）两种切法的 zero-shot ROC-AUC——随机留 5%=**0.888**、留整个癌种(UCEC)=**0.848**，双双落在论文 Ext. Data Fig. 2g,h / Supp Table 3 的区间、**比论文 TCellLandscape 的 0.905/0.859 略低 0.01–0.02（波动内）**——忠实复现、非超越。（此前"分类头全程训练"跑出的 0.939/0.903 是**超出论文协议的过训练上限**，本轮复查已更正为对照——详见 [阶段 5 · E1](phase5_deeper_validation.md)。）对 kNN 基线**分场景**：难案例 B 上分类头胜（0.848 > kNN 0.813，跨域泛化是专用头价值所在）、易案例 A 上 kNN 略胜（0.905 > 0.888，随机切分 kNN 占同病人近邻便宜）；raw accuracy 与 macro-F1 两案例都是 kNN 高，AUROC（论文指标）才公平。**并已复查 kNN 对照的公平性**（`phase5_fair_knn.py`：scVI 只训 reference + 归纳投影 query）：fair inductive kNN ≈ transductive（A 0.642 vs 0.641、B 0.527 vs 0.531），证明"kNN 不输分类头"是真实结论、非表征偷跑——独立分类头相对平凡 kNN 的优势仅在"难案例 AUROC"一格。zero-shot ≈ full-shot（0.888 vs 0.898），印证"不必共训"。
 
 ![注释迁移结果](figures/fig_phase5_transfer.png)
 

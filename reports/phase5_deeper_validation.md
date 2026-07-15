@@ -82,7 +82,8 @@ flowchart LR
 **门道**：
 - **AUROC 对上论文（打平、略低）**：论文 Ext. Data Fig. 2g,h / Supp Table 3 在 TCellLandscape 给的 zero-shot ROC-AUC = 0.905（drop 5%）/ 0.859（drop one study）。同协议下我们 **drop 5%=0.888、drop 整癌种=0.848**，双双落在论文 0.85–0.94 区间、**比论文略低 0.01–0.02（随机波动内）**——**招牌能力忠实复现到了**（是打平，不是超越）。
 - **⚠️ 一处方法学自我更正（本轮复查）**：此前本节用"分类头全程训练"（`pred_last_n_epoch=max_epoch`、150 epoch）跑出 0.939/0.903，误称"略高于论文"。复查发现论文这个 benchmark 用的是**默认协议**——`pred_last_n_epoch=10` 意为"分类头只训**最后 10 个 epoch**"，而 epoch 总数 `=round(20000/N×400)`，论文 TCellLandscape(11万)→73 轮→末 10 轮。改回同协议重跑，我们就是 0.888/0.848。**全程训练是超出论文协议的过训练，能再挤约 +0.05 AUROC，只能当上限/对照，不能算"超越论文"。** 迁移脚本现默认回论文协议（`--protocol paper`）。
-- **专用分类头 vs kNN——要分场景看**：易案例 A（随机 5%）kNN(0.905) 略胜 head(0.888)——随机切分下 query 在 reference 里有同病人近邻，kNN 天然占便宜；**难案例 B（跨癌种域外泛化）head(0.848) > kNN(0.813)**——跨域时专用头稳过纯几何 kNN（+0.035 AUROC），**这才是独立分类头的价值所在**，正对应论文强调的"drop one study 更能体现迁移力"。诚实：两案例 raw accuracy 都是 kNN 更高；AUROC（阈值无关排序、也是论文用的指标）才是公平比较。
+- **专用分类头 vs kNN——要分场景看**：易案例 A（随机 5%）kNN(0.905) 略胜 head(0.888)——随机切分下 query 在 reference 里有同病人近邻，kNN 天然占便宜；**难案例 B（跨癌种域外泛化）head(0.848) > kNN(0.813)**——跨域时专用头稳过纯几何 kNN（+0.035 AUROC），**这才是独立分类头的价值所在**，正对应论文强调的"drop one study 更能体现迁移力"。诚实：两案例 raw accuracy 与 macro-F1 都是 kNN 更高；AUROC（阈值无关排序、也是论文用的指标）才是公平比较。
+- **kNN 对照的公平性——专门复查过（`phase5_fair_knn.py`）**：有人会质疑——kNN 用的 `X_scVI` 是**全量训练**的（见过 query，transductive），而 scAtlasVAE zero-shot 只训 reference（inductive），是否 kNN 占了表征便宜？我们重跑一版**公平 kNN**：scVI **只在 reference 上训练**、query 过**同一个 batch-invariant 编码器**归纳投影（设计 A 直接投影、设计 B 用 scArches 对齐，均不训练 query、不看 query 标签）。结果**几乎不变**——A: acc 0.642 vs 0.641、AUROC 0.898 vs 0.905；B: acc 0.527 vs 0.531、AUROC 0.810 vs 0.813（差 <0.01）。**说明这个 kNN 对照本就公平**（scVI 摊销式编码器泛化好，query 见没见过差别极小），"kNN 在 accuracy/macro-F1 上不输甚至胜过分类头"是**真实结论、非表征偷跑**。诚实推论：scAtlasVAE 的独立分类头相对一个平凡 kNN 基线，优势只在"难案例的 AUROC"这一格，比论文头条数字看起来的要窄——这是论文没做的对照，值得如实记下。
 - **zero-shot ≈ full-shot**：设计 A 里二者接近（AUROC 0.888 vs 0.898），与论文"zero-shot 已足够好、不必共训"一致——而 zero-shot **不重训**、更省算力，正是 batch-invariant 编码器的红利。
 
 **两处"代码 > 论文"的踩坑记（都值得记下）**：
@@ -145,9 +146,10 @@ flowchart LR
 | 批次校正 | graph connectivity | Graph connectivity | 对应 |
 | 批次校正 | batch ASW | （scib-metrics 用 iLISI / KBET / BRAS 系列） | **不同实现** |
 
-**两个必须点破的口径细节**：
+**三个必须点破的口径细节**：
 - **总分加权**：scib-metrics 的 Total = **0.4·批次校正 + 0.6·生物保留**（scIB 论文默认，生物保留权重更大），不是等权。所以"生物保留高、批次没校正"的 scaled PCA 总分也能不低——读总分时要记着。
 - **一个我们踩过并修好的 bug**：`PCR comparison` 曾对所有方法恒为 0，且 `X_pca` 基线被 Benchmarker 用**原始计数**现算的 PCA 覆盖。根因：`Benchmarker` 默认对 `adata.X` 现算 PCA 当"未整合基线"，而我们的 `adata.X` 是**原始计数**（预处理最后一行 `adata.X=layers['counts']`），scib-metrics 要求它是归一化数据。**解法**：显式传 `pre_integrated_embedding_obsm_key="X_pca"`（我们预处理好的 scaled-log PCA）。修复后 PCR 恢复区分度（监督 0.097 > scVI 0.082 ≫ 无监督/PCA≈0），PCA 基线也回到正确的 scaled PCA（生物保留 0.486）。
+- **iLISI/KBET 绝对值低，是"批次多"的必然、不是"没整合好"**：本项目 `batch=patient` 有 **45 个批次**（还有小到 5 个细胞的）。iLISI/KBET 衡量"每个细胞邻域里批次混得多匀"——批次越多、单个 ~90 细胞邻域越不可能塞下全部 45 个批次，绝对值就天然越低（实测 iLISI 全在 0.01–0.06、KBET 0.08–0.14）。**只看相对排序**：PCA 0.011 < 三个 VAE 0.047–0.058，metric 正确反映了"整合后批次更混"；别把低绝对值误读成"没整合"。批次校正的其他分项（graph connectivity 0.64–0.72、BRAS 0.60–0.62）也印证整合有效。
 
 **结论（判据）**：因为**指标集与实现都不同**，我们的绝对分**不能**和论文逐点比；**判据是同一套指标下的相对排序**——监督 scAtlasVAE 最高（批次校正+生物保留两项皆最高），VAE 相对 PCA 的优势集中在**批次校正一列**（PCA<无监督<scVI<监督）。这与阶段 2 一脉相承。
 
