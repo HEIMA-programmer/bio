@@ -100,7 +100,7 @@ flowchart LR
 
 ![官方 vs 手写 UMAP](figures/fig_phase3_umap_compare.png)
 
-*图 6-6 — 官方 vs 手写：UMAP 把同一批主要亚型放到相似区域（红 Temra 在右、绿 Tem 居中、蓝 Tn 在底），**结构趋势高度一致**；kNN 邻域 Jaccard=0.235（远高于随机 ~7e-4；严格局部指标偏低，定性一致才是成功的直接证据，详见 [阶段 3 §10](phase3_reimplement_vae.md)）。*
+*图 6-6 — 官方 vs 手写：UMAP 把主要亚型放到相似区域（红 Temra 在左、绿 Tem 居中、蓝 Tn 在底、Tex 家族在右），**主要结构趋势一致**。两套 latent 各自独立跑 UMAP、原本互为**左右镜像**（实测各亚型横坐标相关 r≈-0.895），图中手写面板 UMAP1 已水平镜像对齐——判定看拓扑邻接、不看绝对左右。kNN 邻域 Jaccard=0.233（远高于随机 ~1.4e-4；严格局部指标偏低，定性一致才是成功的直接证据，详见 [阶段 3 §10](phase3_reimplement_vae.md)）。*
 
 **「我的实现 vs 原实现」差异清单**（节选，详见 [阶段 3 §11](phase3_reimplement_vae.md)）：单分类头 vs 多头、固定 `gene-cell` 离散度、仅 MLP 编码器、未实现 MMD/latent-constraint/多层级——每条都是有依据的范围削减。
 
@@ -138,7 +138,7 @@ flowchart LR
 
 **② 监督 vs 无监督（复现 Ext. Data Fig. 2a 核心论点）**：补上无监督柱后——监督版(0.435) 明显最高（批次校正+生物保留两项皆最高）；无监督(0.404) ≈ PCA、略低于 scVI(0.416)，说明 scAtlasVAE 相对 scVI 的优势来自半监督分类头（并入 §4 四方表；同时修了 PCR 基线 bug，见 §4）。
 
-**③ 批不变编码器实证探针**：给编码器喂打乱的 batch，scAtlasVAE 潜向量 **Δz≡0**（逐元素精确为 0，坐实"结构上不吃 batch"）。附带发现：scVI 默认 `encode_covariates=False`，编码器其实也不吃 batch，仅开 `=True` 才 batch-variant（漂移 0.237）——主动报告了这个与论文对比表字面不完全一致的细节。
+**③ 批不变编码器实证探针**：给编码器喂打乱的 batch，scAtlasVAE 潜向量 **Δz≡0**（逐元素精确为 0，坐实"结构上不吃 batch"）。附带发现：scVI 默认 `encode_covariates=False`，编码器其实也不吃 batch，仅开 `=True` 才 batch-variant（平均 L2 漂移 0.007、max|Δz|=0.237）——主动报告了这个与论文对比表字面不完全一致的细节。
 
 ![批不变探针](figures/fig_phase5_invariance.png)
 

@@ -281,11 +281,17 @@ def scalability():
     axes[0].set_xlabel("训练细胞数（千）", fontsize=10)
     axes[0].set_ylabel("固定 epoch 训练墙钟时间 (s)", fontsize=10)
     axes[0].set_title("训练时间 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
-    # 右：显存
+    # 右：显存。**y 轴从 0 起**，避免把 ~110MB 的 0.1MB 抖动放大成"断崖"假象——
+    # 峰值显存实测几乎恒定（分批训练，GPU 上只驻留一个 minibatch），要如实画成一条平线。
     axes[1].plot(n, df["peak_gpu_mb"].values, "s-", color=PAL["accentB"]["ink"], lw=2.2, ms=7)
     axes[1].set_xlabel("训练细胞数（千）", fontsize=10)
     axes[1].set_ylabel("峰值显存 (MB)", fontsize=10)
     axes[1].set_title("峰值显存 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
+    axes[1].set_ylim(0, float(df["peak_gpu_mb"].max()) * 1.5)
+    axes[1].annotate("几乎恒定 ~110 MB（分批训练，GPU 只驻留 1 个 minibatch）",
+                     xy=(n.mean(), float(df["peak_gpu_mb"].max())),
+                     xytext=(n.min(), float(df["peak_gpu_mb"].max()) * 1.18),
+                     fontsize=8.4, color=MUTED)
     for ax in axes:
         _clean(ax)
         ax.set_xlim(0, n.max() * 1.08)
@@ -320,13 +326,22 @@ def cross_atlas():
 
 
 def umap_compare():
-    """官方 vs 手写 VAE 的 UMAP 对照（按细胞类型上色）。"""
+    """官方 vs 手写 VAE 的 UMAP 对照（按细胞类型上色）。
+
+    注意 UMAP 朝向是任意的：两套 latent 各自独立跑 UMAP，实测两图"各亚型横坐标"
+    相关 r≈-0.895——即整张图互为**左右镜像**（红 Temra 官方在最左、手写在最右）。
+    镜像/旋转无科学含义，为便于并排对照，这里把手写面板的 UMAP1 取反（水平镜像回来），
+    让同一亚型落到同侧；判定"趋势一致"看的是拓扑邻接，不是绝对左右。
+    """
     import scanpy as sc
     a = sc.read_h5ad(os.path.join(DATA_DIR, "tcell_processed.h5ad"))
     ctype = a.obs["cell_type"].values
+    u_off = np.asarray(a.obsm["X_umap_official"])
+    u_mine = np.asarray(a.obsm["X_umap_mine"]).copy()
+    u_mine[:, 0] = -u_mine[:, 0]          # 水平镜像，抵消两套独立 UMAP 的任意左右朝向
     fig, ax = plt.subplots(1, 2, figsize=(11.2, 5.0))
-    _scatter_by(ax[0], a.obsm["X_umap_official"], ctype, "官方 scAtlasVAE latent")
-    _scatter_by(ax[1], a.obsm["X_umap_mine"], ctype, "手写最小 VAE latent", legend=True)
+    _scatter_by(ax[0], u_off, ctype, "官方 scAtlasVAE latent")
+    _scatter_by(ax[1], u_mine, ctype, "手写最小 VAE latent（UMAP1 已水平镜像对齐）", legend=True)
     fig.suptitle("官方 vs 手写 VAE：UMAP 按细胞类型上色（趋势一致即成功）",
                  fontsize=13, fontweight="bold", y=1.0)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
