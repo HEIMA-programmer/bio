@@ -130,6 +130,9 @@ def main():
     ap.add_argument("--lr", type=float, default=5e-5,
                     help="学习率（默认 5e-5；全量多头在高 KL 权重末期会梯度爆炸致 q_mu=NaN，"
                          "调到 3e-5 可稳住——见报告 Task 2 踩坑）")
+    ap.add_argument("--pred-last", type=int, default=0,
+                    help="分类头训练轮数 pred_last_n_epoch：0=全程(=max_epoch，旧行为)；"
+                         "10=论文默认(末10轮)。用于检验标签对齐/混合结论是否依赖'分类头全程训练'。")
     args = ap.parse_args()
 
     print("载入两个图谱...")
@@ -170,14 +173,16 @@ def main():
     import scatlasvae
     N = merged.n_obs
     max_epoch = args.max_epoch or int(min(round(20000 / N * 400), 400))
-    print(f"训练 scAtlasVAE 跨图谱多头：N={N}, max_epoch={max_epoch}")
+    pred_last = args.pred_last if args.pred_last > 0 else max_epoch
+    tag = "" if args.pred_last <= 0 else f"_pl{pred_last}"   # 输出文件后缀，避免覆盖全程版结果
+    print(f"训练 scAtlasVAE 跨图谱多头：N={N}, max_epoch={max_epoch}, pred_last_n_epoch={pred_last}")
     m = scatlasvae.model.scAtlasVAE(
         adata=merged,
         batch_key=["patient", "atlas"],
         label_key=["ct_zheng", "ct_yost"],
         batch_embedding="embedding", batch_hidden_dim=args.batch_hidden_dim, device="cuda:0",
     )
-    m.fit(max_epoch=max_epoch, pred_last_n_epoch=max_epoch, lr=args.lr)
+    m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last, lr=args.lr)
     merged.obsm["X_cross"] = m.get_latent_embedding()
 
     # ---- 评估 ----
@@ -206,20 +211,20 @@ def main():
                      "yost_nn_frac_zheng_higher_is_more_mixed": round(frac_zheng, 4)})
         print(f"  [{name}] balanced silhouette={sil_bal:.4f}（越低越混） | "
               f"Yost 30-NN 中 Zheng={frac_zheng:.3f}（理想≈{ideal:.2f}）")
-    pd.DataFrame(rows).to_csv("phase5_cross_atlas_mixing.csv", index=False)
+    pd.DataFrame(rows).to_csv(f"phase5_cross_atlas_mixing{tag}.csv", index=False)
 
     # (2) 标签对齐矩阵（scAtlasVAE 潜空间）
     M = alignment_matrix(merged.obsm["X_cross"], atlas, ctz, cty, k=30)
-    M.to_csv("phase5_cross_atlas_alignment.csv")
+    M.to_csv(f"phase5_cross_atlas_alignment{tag}.csv")
     print("\nYost×Zheng 对齐矩阵（每个 Yost 亚型的最近邻 Zheng 亚型 top3）：")
     for yt in M.index:
         top = M.loc[yt].sort_values(ascending=False).head(3)
         print(f"  {yt:12s} -> " + ", ".join(f"{z}({p:.2f})" for z, p in top.items()))
 
-    np.savez("phase5_cross_atlas.npz",
+    np.savez(f"phase5_cross_atlas{tag}.npz",
              X_cross=merged.obsm["X_cross"], X_pca_cross=merged.obsm["X_pca_cross"],
              atlas=atlas, ct_zheng=ctz, ct_yost=cty)
-    print("\n完成：phase5_cross_atlas_{mixing,alignment}.csv 与 .npz")
+    print(f"\n完成：phase5_cross_atlas_mixing{tag}.csv / _alignment{tag}.csv / {tag}.npz")
 
 
 if __name__ == "__main__":

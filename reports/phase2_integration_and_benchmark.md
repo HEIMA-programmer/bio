@@ -267,14 +267,16 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 
 > 论文在 Zheng 数据上把批次指标**同时按 `sample_name` 和 `study_name` 两个层级**都算了（`silhouette_batch ASW (sample_name)` 与 `(study_name)`、`pcr_comparison (sample_name)` 与 `(study_name)`）。**关键：方法排序在两个层级下一致**（监督最高、无监督≈scVI），而 label silhouette 这种生物指标根本不看 batch。**我们的 `batch=patient` ≈ 论文的 `sample_name` 层级——本就是论文报告的正当层级之一，我们已复现了它要证明的结论。** 论文 graph connectivity 亦同向（监督 0.871 > scVI 0.811 > 无监督 0.777）。
 
-**② 注释迁移（Benchmark 3，Zheng 数据）——同量级、我们略高：**
+**② 注释迁移（Benchmark 3，Zheng 数据）——同量级、打平略低（论文协议下）：**
 
-| | 论文 scAtlasVAE zero-shot | 我们 |
+| | 论文 scAtlasVAE zero-shot | 我们（论文协议·末10轮） |
 |---|---|---|
-| 随机留 5% | 0.905 | **0.939** |
-| 留一个 study/整癌种 | 0.859 | **0.903** |
+| 随机留 5% | 0.905 | **0.888** |
+| 留一个 study/整癌种 | 0.859 | **0.848** |
 
-**③ 超参网格（Supp Table 3 后半段）证明我们的参数没问题**：论文对 `batch_hidden ∈ {16,32,64}`、`n_latent ∈ {5,10,20}` 做了完整网格——**16/32/64 几乎无差、`n_latent` 10 和 20 都好、5 明显差**。这直接背书：我们 `batch_hidden_dim=10`（落在稳健区）与 `n_latent=10` 的选择站得住，且我们消融"n_latent=2 差、10/50 好"和论文"5 差、10/20 好"同向。
+> 注：此处我们用**论文默认协议**（分类头训末 10 轮）对标——比论文略低 0.01–0.02、在波动内。若把分类头改成全程训练会到 0.939/0.903，但那是超出论文协议的过训练，不作对标（详见 [阶段 5 · E1](phase5_deeper_validation.md)）。
+
+**③ 超参网格（Supp Table 3 后半段）证明我们的参数没问题**：论文对 `batch_hidden ∈ {16,32,64}`、`n_latent ∈ {5,10,20}` 做了完整网格——**16/32/64 几乎无差（overall 波动 <0.02）、`n_latent` 10 和 20 都好、5 系统性偏低约 0.03**（Zheng 网格 overall：5≈0.78 < 10≈0.81 ≈ 20≈0.81）。这直接背书：我们 `n_latent=10` 的选择站得住；`batch_hidden_dim=10` 虽**略低于论文网格下界 16**，但该维度 16/32/64 近乎无差、外推到 10 风险很低。我们消融"n_latent=2 差、10/50 好"也与论文"5 偏低、10/20 好"同向。
 
 **结论（回答"要不要按 study 重训"）**：**不必要。** 论文自己的数字表明 Zheng benchmark 的结论**在 sample 与 study 两个 batch 层级下相同**；我们的 `patient(≈sample_name)` 复现已捕获该结论，且参数已被论文网格验证。改用 `study_name` 需重训 scAtlasVAE(监督+无监督)+scVI+重跑评测（≈把 Task 1 整条重做）、还需从 Zenodo 取 study 标签——投入产出比低、结论不会变。
 

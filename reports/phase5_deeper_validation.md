@@ -27,7 +27,7 @@ flowchart LR
 | 编号 | 做什么 | 对标论文 | 一句话结论 |
 |---|---|---|---|
 | **E2** | 监督 vs 无监督 scAtlasVAE 四方对比 | Ext. Data Fig. 2a | 监督最高；无监督≈PCA、略低于 scVI（优势来自分类头） |
-| **E1** | 注释迁移（zero/full-shot）+ kNN 对照 | Ext. Data Fig. 2g,h | zero-shot AUROC 0.90–0.94，对上论文、且反超 kNN |
+| **E1** | 注释迁移（zero/full-shot）+ kNN 对照 | Ext. Data Fig. 2g,h | 论文协议下 zero-shot AUROC 0.85–0.89，对上论文（打平略低）；难案例 B 反超 kNN |
 | **E3** | 批不变编码器"打乱 batch"探针 | Methods（编码器 F(X)） | scAtlasVAE 结构上 Δz≡0；附带 scVI 细节发现 |
 | **E4** | 手写最小 VAE 放上同一把 scib 标尺 | —（自我量化） | 手写实现总分 0.406，落在 PCA 与 scVI 之间 |
 | **E5** | scib-metrics ↔ 论文旧 scib 指标对照 | Methods（指标） | 绝对值不可比、相对排序才是判据 |
@@ -71,21 +71,23 @@ flowchart LR
 
 | 设计 | 方法 | accuracy | macro-F1 | macro OVR-AUC |
 |---|---|---|---|---|
-| **A** 随机5%（n=5240） | scAtlasVAE (zero-shot) | 0.574 | 0.495 | **0.939** |
-| A | scAtlasVAE (full-shot) | 0.580 | 0.506 | **0.941** |
+| **A** 随机5%（n=5240） | scAtlasVAE (zero-shot) | 0.468 | 0.369 | **0.888** |
+| A | scAtlasVAE (full-shot) | 0.487 | 0.367 | **0.898** |
 | A | kNN on scVI latent（对照） | 0.641 | 0.510 | 0.905 |
-| **B** 整癌种 UCEC（n=19926） | scAtlasVAE (zero-shot) | 0.498 | 0.419 | **0.903** |
+| **B** 整癌种 UCEC（n=19926） | scAtlasVAE (zero-shot) | 0.341 | 0.296 | **0.848** |
 | B | kNN on scVI latent（对照） | 0.531 | 0.377 | 0.813 |
 
+> **上表为论文协议**（`--protocol paper`：`pred_last_n_epoch=10`、`max_epoch` 自动≈80，分类头训**末 10 轮**——与论文 TCellLandscape benchmark 同起跑线）。作对照，"分类头全程训练"（`--protocol fulltime`、150 epoch）会把 zero-shot AUROC 抬到 **A=0.939 / B=0.903**（见"门道"第 2 条）——那是**超出论文协议的过训练上限、不作主结果**。
+
 **门道**：
-- **AUROC 对上论文、甚至略高**：论文 Ext. Data Fig. 2g,h 在 TCellLandscape 给的 zero-shot ROC-AUC = 0.91（drop 5%）/ 0.86（drop one study）。我们 **drop 5%=0.939、drop 整癌种=0.903**，双双落在论文 0.85–0.94 区间、且略高于论文 TCellLandscape（我们参考集更大→迁移更好）——**招牌能力复现到了**。
-- **专用分类头 > 通用 kNN**：scAtlasVAE 自带头的 AUROC（0.939 / 0.903）在两种设计上都**高于"好表征上的 kNN"**（0.905 / 0.813），在更难的域外泛化（设计 B，留出整个癌种）上领先尤为明显（+0.09 AUROC）。验证论文"独立分类头"的设计价值：kNN 只用几何近邻，分类头学到更能跨批次泛化的判别边界。（诚实：raw accuracy 上 kNN 反而略高——AUROC 这个与阈值无关的排序指标才是公平比较。）
-- **zero-shot ≈ full-shot**：设计 A 里二者几乎相同（AUROC 0.939 vs 0.941），与论文"zero-shot 已足够好、不必共训"一致——而 zero-shot **不重训**、更省算力，正是 batch-invariant 编码器的红利。
-- **一个踩坑教训（见下）**：在早期的 4 万参考集上，一开始 zero-shot accuracy 只有 0.26、被 kNN(0.61) 碾压——根因见下面第 2 条；修好后才有上面的 0.90+。
+- **AUROC 对上论文（打平、略低）**：论文 Ext. Data Fig. 2g,h / Supp Table 3 在 TCellLandscape 给的 zero-shot ROC-AUC = 0.905（drop 5%）/ 0.859（drop one study）。同协议下我们 **drop 5%=0.888、drop 整癌种=0.848**，双双落在论文 0.85–0.94 区间、**比论文略低 0.01–0.02（随机波动内）**——**招牌能力忠实复现到了**（是打平，不是超越）。
+- **⚠️ 一处方法学自我更正（本轮复查）**：此前本节用"分类头全程训练"（`pred_last_n_epoch=max_epoch`、150 epoch）跑出 0.939/0.903，误称"略高于论文"。复查发现论文这个 benchmark 用的是**默认协议**——`pred_last_n_epoch=10` 意为"分类头只训**最后 10 个 epoch**"，而 epoch 总数 `=round(20000/N×400)`，论文 TCellLandscape(11万)→73 轮→末 10 轮。改回同协议重跑，我们就是 0.888/0.848。**全程训练是超出论文协议的过训练，能再挤约 +0.05 AUROC，只能当上限/对照，不能算"超越论文"。** 迁移脚本现默认回论文协议（`--protocol paper`）。
+- **专用分类头 vs kNN——要分场景看**：易案例 A（随机 5%）kNN(0.905) 略胜 head(0.888)——随机切分下 query 在 reference 里有同病人近邻，kNN 天然占便宜；**难案例 B（跨癌种域外泛化）head(0.848) > kNN(0.813)**——跨域时专用头稳过纯几何 kNN（+0.035 AUROC），**这才是独立分类头的价值所在**，正对应论文强调的"drop one study 更能体现迁移力"。诚实：两案例 raw accuracy 都是 kNN 更高；AUROC（阈值无关排序、也是论文用的指标）才是公平比较。
+- **zero-shot ≈ full-shot**：设计 A 里二者接近（AUROC 0.888 vs 0.898），与论文"zero-shot 已足够好、不必共训"一致——而 zero-shot **不重训**、更省算力，正是 batch-invariant 编码器的红利。
 
 **两处"代码 > 论文"的踩坑记（都值得记下）**：
 1. **官方 `setup_anndata` 假设 query 的 batch/label 与参考不相交**（对新数据集成立），但我们"留出式"query 的病人/亚型都是参考的子集，会触发 `add_categories: new categories must not include old`。解法：迁移前删掉 query 的 batch 与 label 两列，让官方走"全设 undefined"的分支——因为编码器 batch-invariant（见 E3，Δz≡0），batch 取值对预测毫无影响；label 的 categories 仍取参考 17 类，`n_label` 由 categories 推出仍=17、与预训练分类头对齐。这也正是**诚实的 zero-shot 语义**：假装不知道 query 的批次与标签。
-2. **分类头默认只在最后 `pred_last_n_epoch`(=10) 个 epoch 才训练**（打补丁后 `_gex_model.py:1372` 的 `epoch == max_epoch - pred_last_n_epoch` 门 + `:1411` 才把 prediction_loss 加进总损失；之前 epoch 根本不含它）。这是给论文 115 万细胞 atlas 调的——10 epoch × 115 万 = 大量分类更新；早期我们参考集仅 ~3.8 万，10 epoch 远不够，实测 zero-shot 准确率一度只有 0.26、反被 kNN(0.61) 碾压。解法：让分类头**全程训练**（`pred_last_n_epoch=max_epoch`），是针对小参考集的正当调整（全量 ~10 万后此调整依然保留、结果 0.90+）。
+2. **分类头默认只在最后 `pred_last_n_epoch`(=10) 个 epoch 才训练**（源码 `_gex_model.py:1430` 的 `if epoch > max_epoch - pred_last_n_epoch` 才把 prediction_loss 加进总损失）。**关键：这个"末 10 轮"是随数据量浮动的**——epoch 总数 `=round(20000/N×400)`，N 越大轮数越少：论文 TCellLandscape(11万)→73 轮→末 10 轮；而论文那个 **147 万的多图谱 benchmark→只有 5 轮→`pred_last=10>5`→分类头其实全程训练**（这条对 Task 2 很关键，见那一节）。早期我们把 Zheng 下采样到 ~3.8 万调试时，默认设置下 zero-shot acc 一度只有 0.26、被 kNN(0.61) 碾压，遂改成全程训练救急。**但全量 ~10 万后，论文默认(末10轮)本就够用**——论文自己在 11 万上就是这么拿到 0.905 的；本轮复查重跑证实：论文协议下我们 0.888/0.848、对上论文。故**迁移现在默认回论文协议**（`--protocol paper`），全程训练仅留作 `--protocol fulltime` 对照（过训练上限）。
 
 ---
 
@@ -157,7 +159,7 @@ flowchart LR
 
 **做法**（脚本 `phase5_cross_atlas.py`）：
 - 图谱 1 = 我们的 Zheng/GSE156728（**全量 104,805**，meta.cluster 17 亚型）；图谱 2 = **Yost 2019 BCC**（GSE123813，12,364 CD8，独立注释 CD8_act/eff/ex/ex_act/mem）——真实、独立（Yost 本身也在论文 TCellLandscape/TCellMap 的源研究列表里），货真价实的跨研究/跨癌种挑战。
-- 合并后 `batch_key=[patient, atlas]`、`label_key=[ct_zheng, ct_yost]`（**两个分类头**，各只在本图谱有标签的细胞上训练，另一图谱该列置 undefined）。设置：`batch_hidden_dim=64`（论文 Ext.Fig.4b 默认）、100 epoch、**`lr=3e-5`**（全量下用默认 5e-5 会在末期梯度爆炸致 NaN 崩溃，见下"踩坑 2"）。
+- 合并后 `batch_key=[patient, atlas]`、`label_key=[ct_zheng, ct_yost]`（**两个分类头**，各只在本图谱有标签的细胞上训练，另一图谱该列置 undefined）。设置：`batch_hidden_dim=64`（论文 Ext.Fig.4b 默认）、100 epoch、分类头**全程训练**（`pred_last_n_epoch=max_epoch`，贴合论文 Task 2 大 N 规程，见下"门道"）、**`lr=3e-5`**（全量下用默认 5e-5 会在末期梯度爆炸致 NaN 崩溃，见下"踩坑 2"）。
 - **评估用对类别不平衡稳健的指标**（Yost 仅占 10.5%，直接对全体算 silhouette 会被 Zheng 主导而误导——见"踩坑 3"）：① 平衡子采样 atlas silhouette；② Yost 细胞 30-NN 中 Zheng 占比；③ 标签对齐矩阵，且**与 PCA 对照**。
 
 **结果（全量 104,805 + 12,364、bhd=64、100 epoch、lr=3e-5）**：
@@ -185,6 +187,8 @@ flowchart LR
 
 **门道**：**全量下 scAtlasVAE 既把两个独立图谱整合得明显好于 PCA（Yost 近邻 Zheng 占比 24.8% vs PCA 4.0%），又用多头把标签对齐得比 PCA 锐利（CD8_ex→Tex 0.95 vs 0.64、CD8_eff→Temra 0.87 vs 0.68）。** 这正是它相对 scVI/scPoli 的独有价值：scVI 能整合、但没分类头、无法**并行对齐**两套标签体系。**诚实**：整合仍不完美——Yost 近邻里 Zheng 才 24.8% ≪ 理想 89%，跨癌种 + 少数图谱（10.5%）确实难彻底混匀。
 
+> **关于分类头训练协议（本轮复查补充，重要）**：Task 2 两个分类头是**全程训练**的（`pred_last_n_epoch=max_epoch`）。这**不是**像 Task 3 迁移那样的过训练，而是**贴合论文 Task 2 的实际规程**——论文多图谱 benchmark 的 N≈147 万，`max_epoch=round(20000/N×400)=5 < 默认 pred_last_n_epoch=10`，故论文那边分类头**本就全程训练**（原理见 E1 踩坑 2 的"末10轮随 N 浮动"）。**敏感性检验**：我们另用"末 10 轮"协议（`--pred-last 10`，即我们这个小 N 下的默认）重跑一遍——**标签对齐结论稳健**（CD8_eff→Temra 仍 **0.95**、CD8_ex_act→Tex **0.90**，甚至更锐利），但**混合强度依赖分类头训练量**：Yost-NN-Zheng 占比降到 0.135（仍 >3× PCA 的 0.040），平衡 silhouette 升到 0.097（≈PCA 0.087、不再明显赢）。**结论：Task 2 的核心卖点——多头把两套标签生物学对齐——两种协议下都成立；而"两图谱混得多匀"这个次要指标，只有在（论文规程的）全程训练下才明显超 PCA。**
+>
 > **三个踩坑教训（都是复查真跑出来的）**：
 > 1. **抄近道的"假失败"**：最初为省算力只跑 15 epoch + bhd=10，两图谱几乎不混（Yost 近邻 Zheng 仅 0.3%）；贴论文设置（bhd=64、100 epoch）后才真正整合。
 > 2. **全量末期 NaN 崩溃**：全量（117k）+ 默认 `lr=5e-5` 时，多头预测损失在高-KL 末期（~epoch 94）间歇注入大梯度，把编码器 `q_mu` 冲成 NaN 而崩（源码 `_gex_model.py:1441` 会跳过 NaN-loss 批次，但前向构造 `Normal(loc=NaN)` 直接抛错）。**降到 `lr=3e-5` 稳住**、跑满 100 epoch；rec 全程正常下降，证明是数值不稳、非方法问题。
@@ -214,7 +218,7 @@ flowchart LR
 
 ## 6. 局限与诚实声明
 
-- **规模**：主数据 = **GSE156728 全量 CD8 10X 104,805**（= 论文 TCellLandscape 的 Zheng 主体、其 CD8 的 95%，仅漏 OV/FTC/CHOL 3 个小队列），迁移（E1）参考集 ~10 万，**zero-shot AUROC（0.903–0.939）落在论文区间、略高于论文 TCellLandscape**（论文 **Supp Table 3** 同一份数据上也是"监督最高、无监督≈scVI"，交叉验证见 [阶段 2 §7.1](phase2_integration_and_benchmark.md)）；accuracy（0.50–0.57）比 AUROC 逊色，属 17 类细粒度分类在 `batch=patient`(≈论文 sample_name) 设定下的正常表现。**未跑 115 万全 atlas；batch 用 patient 而非论文 study_name**（后者是作者组装时贴的来源标签、不在 GEO metadata）。Task 2 已用**全量 Zheng（104,805）+ Yost（12,364）**（`lr=3e-5` 稳住末期 NaN）：整合优于 PCA、标签对齐比 PCA 锐利，但仍不完美（Yost 近邻里 Zheng 24.8% ≪ 理想 89%）。
+- **规模**：主数据 = **GSE156728 全量 CD8 10X 104,805**（= 论文 TCellLandscape 的 Zheng 主体、其 CD8 的 95%，仅漏 OV/FTC/CHOL 3 个小队列），迁移（E1）参考集 ~10 万，**论文协议（分类头末10轮）下 zero-shot AUROC（0.848–0.888）落在论文区间、比论文 TCellLandscape 略低 0.01–0.02（打平、非超越；此前 0.90+ 是分类头全程训练的过训练上限，本轮已复查更正）**（论文 **Supp Table 3** 同一份数据上也是"监督最高、无监督≈scVI"，交叉验证见 [阶段 2 §7.1](phase2_integration_and_benchmark.md)）；accuracy（0.34–0.47）比 AUROC 逊色，属 17 类细粒度分类在 `batch=patient`(≈论文 sample_name) 设定下、且分类头仅训末10轮的正常表现。**未跑 115 万全 atlas；batch 用 patient 而非论文 study_name**（后者是作者组装时贴的来源标签、不在 GEO metadata）。Task 2 已用**全量 Zheng（104,805）+ Yost（12,364）**（`lr=3e-5` 稳住末期 NaN）：整合优于 PCA、标签对齐比 PCA 锐利，但仍不完美（Yost 近邻里 Zheng 24.8% ≪ 理想 89%）。
 - **E1 的调整**：为让自带分类头在（早期的）小参考集上可用，把 `pred_last_n_epoch` 从默认 10 调到全程；有据、已点明，不是"偷偷调好看"。
 - **一个已修的评测 bug**：scib-metrics 的 PCR comparison 曾恒为 0、PCA 基线曾被原始计数 PCA 覆盖（见 E5）；修复后结论方向不变、但"VAE≫PCA"收敛为"VAE 主要赢在批次校正"。
 - **E3 的诚实**：我们主动报告了"scVI 默认编码器其实也不吃 batch"这一与论文对比表字面不完全一致的细节，而非只挑对我们有利的对照。

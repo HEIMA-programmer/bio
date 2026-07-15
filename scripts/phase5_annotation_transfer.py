@@ -3,12 +3,22 @@
 论文招牌能力
     训练好带分类头的参考模型后，query 数据可**不重训直接映射进参考图谱并自动标注**
     （zero-shot），也可与参考共训（full-shot）。论文在 TCellLandscape 上给的对标数：
-    drop 5% cells / drop one study 的 ROC-AUC ≈ 0.85–0.91（zero-shot 最高）。
+    drop 5% cells / drop one study 的 ROC-AUC ≈ 0.905 / 0.859（zero-shot；Supp Table 3）。
 
 我们的复现（数据 = 我们那份 104,805 细胞的 GSE156728 全量 CD8 10X）
     两种 query 切法：
       设计 A：随机留出 5% 细胞为 query（对标 "drop 5% cells"）。
       设计 B：留出**一个整癌种**（默认 UCEC）为 query（对标 "drop one study"，更难的域外泛化）。
+
+    **分类头训练协议（--protocol，2026-07 加）**：源码 `_gex_model.py:1430`
+    `if epoch > max_epoch - pred_last_n_epoch:` 才把分类头损失加进总损失。
+      - `paper`（默认，推荐）：`pred_last_n_epoch=10`、`max_epoch` 自动 = min(round(20000/N*400),400)≈80，
+        分类头训**末 10/80 轮**——与论文 TCellLandscape benchmark（末 10/73 轮、AUROC 0.905）**同协议**，
+        对标才公平。
+      - `fulltime`：`pred_last_n_epoch=max_epoch`、`max_epoch=150`，分类头**全程训练**。这是早期
+        ~3.8 万小参考集时期的补丁（那时末 10 轮不够、zero-shot acc 仅 0.26）；全量 ~10 万后
+        论文默认已够（论文自己在 110k 上用默认拿到 0.905），此模式仅保留作对照。
+
     每种设计：
       - reference（其余细胞）上**监督训练**新模型（不能复用见过全量的 scatlasvae_tcell.pt）。
       - zero-shot：setup_anndata(query, ref.pt) -> 预训练权重建 query 模型 -> predict_labels。
@@ -17,11 +27,11 @@
     指标：accuracy、macro-F1、macro one-vs-rest ROC-AUC（论文指标）+ 混淆矩阵。
 
 用法（环境 A `scatlasvae`；sklearn 由 scanpy 依赖自带）
-    python phase5_annotation_transfer.py                          # 跑设计 A+B 全流程
-    python phase5_annotation_transfer.py --designs A --max-epoch 120
-产出
-    phase5_transfer_results.csv（每行 = 设计×方法 的 acc/F1/AUROC）
-    phase5_transfer_cm.npz（各配置的 y_true/y_pred，供画混淆矩阵）
+    python phase5_annotation_transfer.py                          # 论文协议、设计 A+B
+    python phase5_annotation_transfer.py --protocol fulltime      # 旧全程训练（对照）
+产出（按协议分文件，互不覆盖）
+    phase5_transfer_results[_paper].csv（每行 = 设计×方法 的 acc/F1/AUROC）
+    phase5_transfer_cm[_paper].npz（各配置的 y_true/y_pred，供画混淆矩阵）
 对应报告
     reports/phase5_deeper_validation.md（E1）。
 """
@@ -40,8 +50,11 @@ LABEL_KEY = "cell_type"
 DROP_CANCER = "UCEC"        # 设计 B 留作 query 的癌种
 KNN_K = 13                  # 我们自设的 kNN 对照（"无专用预测头"控制；论文 Bench3 基线是 scPoli/scANVI/CellTypist，非 kNN）
 SEED = 0
-RESULTS_CSV = "phase5_transfer_results.csv"
-CM_NPZ = "phase5_transfer_cm.npz"
+
+
+def auto_max_epoch(n):
+    """论文默认 epoch 公式 min(round(20000/N*400),400)。"""
+    return int(min(round(20000 / n * 400), 400))
 
 
 # ---------- 指标 ----------
@@ -75,20 +88,20 @@ def eval_pred(tag, design, method, y_true_str, y_pred_str, classes, probs, cm_st
 
 
 # ---------- scAtlasVAE 迁移 ----------
-def train_reference(adata, ref_mask, ref_pt, max_epoch):
+def train_reference(adata, ref_mask, ref_pt, max_epoch, pred_last):
     import scatlasvae
     ref = adata[ref_mask].copy()
     m = scatlasvae.model.scAtlasVAE(
         adata=ref, batch_key=BATCH_KEY, label_key=LABEL_KEY,
         batch_embedding="embedding", batch_hidden_dim=10, device="cuda:0",
     )
-    # 关键：源码 fit 里分类头损失**只在最后 pred_last_n_epoch(默认10)个 epoch**才加入
-    # （_gex_model.py:1430-1433）。默认值为论文 115 万细胞的 atlas 调的；我们参考集仅 ~3.8 万，
-    # 10 个 epoch 的分类头训练远不够（实测 zero-shot acc 仅 0.26、而 kNN 达 0.61）。
-    # 这里让分类头**全程训练**（=全程半监督），是针对小参考集的正当调整。
-    m.fit(max_epoch=max_epoch, pred_last_n_epoch=max_epoch)
+    # 分类头训练调度：源码 fit `if epoch > max_epoch - pred_last_n_epoch` 才加分类损失。
+    #   paper 协议: pred_last=10、max_epoch 自动≈80 → 末 10 轮（=论文 benchmark 同协议）。
+    #   fulltime  : pred_last=max_epoch → 全程（小参考集时期补丁，全量下非必需）。
+    m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last)
     m.save_to_disk(ref_pt)
-    print(f"  参考模型已训练并保存 -> {ref_pt}（reference n={int(ref_mask.sum())}）")
+    print(f"  参考模型已训练并保存 -> {ref_pt}"
+          f"（reference n={int(ref_mask.sum())}, max_epoch={max_epoch}, pred_last_n_epoch={pred_last}）")
 
 
 def zeroshot_predict(adata, query_mask, ref_pt):
@@ -127,7 +140,7 @@ def zeroshot_predict(adata, query_mask, ref_pt):
     return y_true, y_pred, classes, probs
 
 
-def fullshot_predict(adata, ref_mask, query_mask, max_epoch):
+def fullshot_predict(adata, ref_mask, query_mask, max_epoch, pred_last):
     import scatlasvae
     ref = adata[ref_mask].copy()
     q = adata[query_mask].copy()
@@ -139,7 +152,7 @@ def fullshot_predict(adata, ref_mask, query_mask, max_epoch):
         adata=merged, batch_key=BATCH_KEY, label_key=LABEL_KEY,
         batch_embedding="embedding", batch_hidden_dim=10, device="cuda:0",
     )
-    m.fit(max_epoch=max_epoch, pred_last_n_epoch=max_epoch)   # 同上：分类头全程训练
+    m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last)   # 与参考同协议
     pred_df = m.predict_labels(return_pandas=True)
     y_pred = pred_df.loc[q_index, LABEL_KEY].astype(str).values
     classes = list(m.label_category.categories)
@@ -165,7 +178,7 @@ def knn_baseline(adata, ref_mask, query_mask, rep="X_scVI"):
 
 
 # ---------- 主流程 ----------
-def run_design(adata, design, max_epoch, rows, cm_store):
+def run_design(adata, design, protocol, fulltime_max_epoch, out_csv, out_npz, rows, cm_store):
     rng = np.random.default_rng(SEED)
     n = adata.n_obs
     if design == "A":
@@ -178,11 +191,21 @@ def run_design(adata, design, max_epoch, rows, cm_store):
             print(f"  [跳过] 设计 B：数据里没有癌种 {DROP_CANCER}")
             return
     ref_mask = ~query_mask
-    print(f"\n=== 设计 {design}：reference n={int(ref_mask.sum())} / query n={int(query_mask.sum())} ===")
+    n_ref = int(ref_mask.sum())
 
-    ref_pt = f"ref_model_design{design}.pt"
+    # 协议决定 max_epoch 与 pred_last_n_epoch
+    if protocol == "paper":
+        max_epoch = auto_max_epoch(n_ref)     # 自动≈80
+        pred_last = 10                         # 论文默认
+    else:  # fulltime
+        max_epoch = fulltime_max_epoch         # 150
+        pred_last = fulltime_max_epoch         # 全程
+    print(f"\n=== 设计 {design}（protocol={protocol}）：reference n={n_ref} / query n={int(query_mask.sum())}"
+          f" | max_epoch={max_epoch}, pred_last_n_epoch={pred_last} ===")
+
+    ref_pt = f"ref_model_design{design}_{protocol}.pt"
     if not os.path.exists(ref_pt):
-        train_reference(adata, ref_mask, ref_pt, max_epoch)
+        train_reference(adata, ref_mask, ref_pt, max_epoch, pred_last)
     else:
         print(f"  参考模型已存在，跳过训练：{ref_pt}")
 
@@ -192,7 +215,7 @@ def run_design(adata, design, max_epoch, rows, cm_store):
 
     # full-shot（仅设计 A，控时长）
     if design == "A":
-        yt, yp, cls, pr = fullshot_predict(adata, ref_mask, query_mask, max_epoch)
+        yt, yp, cls, pr = fullshot_predict(adata, ref_mask, query_mask, max_epoch, pred_last)
         rows.append(eval_pred(f"{design}_fullshot", design, "scAtlasVAE (full-shot)", yt, yp, cls, pr, cm_store))
 
     # kNN on scVI latent 对照
@@ -201,25 +224,33 @@ def run_design(adata, design, max_epoch, rows, cm_store):
         rows.append(eval_pred(f"{design}_knn_scvi", design, "kNN on scVI latent", yt, yp, cls, pr, cm_store))
 
     # 每个设计结束落一次盘，便于中断续跑
-    pd.DataFrame(rows).to_csv(RESULTS_CSV, index=False)
-    np.savez(CM_NPZ, **cm_store)
+    pd.DataFrame(rows).to_csv(out_csv, index=False)
+    np.savez(out_npz, **cm_store)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--designs", nargs="+", default=["A", "B"], choices=["A", "B"])
+    ap.add_argument("--protocol", choices=["paper", "fulltime"], default="paper",
+                    help="paper=论文协议(pred_last_n_epoch=10、max_epoch自动，与论文benchmark同起跑线，推荐)；"
+                         "fulltime=分类头全程训练(旧小参考集补丁，仅作对照)")
     ap.add_argument("--max-epoch", type=int, default=150,
-                    help="每次参考/共训的 epoch 上限（控 4060 时长；默认 150）")
+                    help="仅 fulltime 协议用：全程训练的 epoch 数（控 4060 时长；默认 150）")
     args = ap.parse_args()
+
+    # 按协议分文件，避免覆盖对照结果
+    suffix = "" if args.protocol == "fulltime" else "_paper"
+    out_csv = f"phase5_transfer_results{suffix}.csv"
+    out_npz = f"phase5_transfer_cm{suffix}.npz"
 
     adata = sc.read_h5ad(PROC_PATH)
     rows, cm_store = [], {}
     for d in args.designs:
-        run_design(adata, d, args.max_epoch, rows, cm_store)
+        run_design(adata, d, args.protocol, args.max_epoch, out_csv, out_npz, rows, cm_store)
 
     print("\n===== 汇总 =====")
     print(pd.DataFrame(rows).to_string(index=False))
-    print(f"\n完成：见 {RESULTS_CSV} 与 {CM_NPZ}")
+    print(f"\n完成：见 {out_csv} 与 {out_npz}")
 
 
 if __name__ == "__main__":

@@ -139,9 +139,10 @@ def bench_minimal():
 
 
 def transfer():
-    """阶段 5 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。"""
+    """阶段 5 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。
+    用**论文协议**结果（phase5_transfer_results_paper.csv：分类头训末10轮、与论文同起跑线）。"""
     import pandas as pd
-    df = pd.read_csv(os.path.join(DATA_DIR, "phase5_transfer_results.csv"))
+    df = pd.read_csv(os.path.join(DATA_DIR, "phase5_transfer_results_paper.csv"))
     metrics = [("accuracy", "Accuracy"), ("macro_f1", "macro-F1"), ("macro_ovr_auc", "macro OVR-AUC")]
     designs = {"A": "设计A(随机5%)", "B": "设计B(整癌种UCEC)"}
     mcol = {"scAtlasVAE (zero-shot)": PAL["encoder"]["ink"],
@@ -165,8 +166,8 @@ def transfer():
         ax.legend(fontsize=8.3, frameon=False, loc="lower left")
         _clean(ax)
     axes[0][0].set_ylabel("分数（越高越好）", fontsize=10)
-    fig.suptitle("注释迁移（Task 3）：zero-shot / full-shot / kNN 对照（真实）",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle("注释迁移（Task 3）：zero-shot / full-shot / kNN 对照（真实，论文协议·分类头末10轮）",
+                 fontsize=12.5, fontweight="bold", y=1.02)
     fig.tight_layout()
     _save(fig, "fig_phase5_transfer")
 

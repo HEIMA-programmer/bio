@@ -3,7 +3,7 @@
 > **阶段** 4 / 6　·　**前置**：[阶段 3 · 核心 VAE 重写](phase3_reimplement_vae.md)　·　**产出**：消融结果表/图 + 结论　·　**预计** 2 天
 > **导航**：[← 阶段 3](phase3_reimplement_vae.md)　·　[总纲](00_overview_and_learning_map.md)　·　[阶段 5 深入验证 →](phase5_deeper_validation.md)
 >
-> **结果已为本机真实实跑（2026-07-09）**：两个消融（潜维度、KL 预热）各配置 100 epoch，scib-metrics 打分，含两处与直觉不符结果的诚实讨论。
+> **结果已为本机真实实跑（2026-07-09）**：两个消融（潜维度、KL 预热）各配置 50 epoch（`phase4_ablations.py` 的 `MAX_EPOCH_ABL=50`，为省时截断；相对排序对 epoch 数不敏感），scib-metrics 打分，含两处与直觉不符结果的诚实讨论。
 
 ---
 
