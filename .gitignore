@@ -29,3 +29,12 @@ scripts/figgen/fonts/*.ttc
 # 大体积复现产物 (不入库): 旧 4 万备份目录; 跨图谱全量嵌入 npz(35MB, 可由 phase5_cross_atlas.py 重生成, 图/CSV 已入库)
 data/_backup_4w/
 data/phase5_cross_atlas*.npz
+# Per-cell classifier dumps are reproducible intermediates; aggregate CSVs are tracked.
+data/phase5_cross_atlas_head_predictions*.csv.gz
+
+# Local rerun state, caches, and recoverable pre-fix backups
+.runtime_cache/
+data/pre_fix_backup_*/
+data/pre_empty_head_guard_*/
+data/*_pipeline_status.json
+data/patient_fulltime_status.json

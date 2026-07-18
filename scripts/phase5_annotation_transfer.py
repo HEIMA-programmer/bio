@@ -6,15 +6,16 @@
     drop 5% cells / drop one study 的 ROC-AUC ≈ 0.905 / 0.859（zero-shot；Supp Table 3）。
 
 我们的复现（数据 = 我们那份 104,805 细胞的 GSE156728 全量 CD8 10X）
-    两种 query 切法：
+    三种 query 切法：
       设计 A：随机留出 5% 细胞为 query（对标 "drop 5% cells"）。
-      设计 B：留出**一个整癌种**（默认 UCEC）为 query（对标 "drop one study"，更难的域外泛化）。
+      设计 B：留出一个整癌种（默认 UCEC），测试生物 OOD；它不是 batch/study 留出。
+      设计 P：留出整位患者，作为当前字段下的样本/批次域类比；仍不是 leave-one-study。
 
     **分类头训练协议（--protocol，2026-07 加）**：源码 `_gex_model.py:1430`
     `if epoch > max_epoch - pred_last_n_epoch:` 才把分类头损失加进总损失。
-      - `paper`（默认，推荐）：`pred_last_n_epoch=10`、`max_epoch` 自动 = min(round(20000/N*400),400)≈80，
-        分类头训**末 10/80 轮**——与论文 TCellLandscape benchmark（末 10/73 轮、AUROC 0.905）**同协议**，
-        对标才公平。
+      - `paper`（默认，推荐）：`pred_last_n_epoch=10`、`max_epoch` 按 reference 大小自动计算，
+        分类头只训末 10 轮。训练日程与论文 Task 3 默认一致，但 B/P 的留出单位不同，不能与
+        论文 leave-one-study 数值直接对齐。
       - `fulltime`：`pred_last_n_epoch=max_epoch`、`max_epoch=150`，分类头**全程训练**。这是早期
         ~3.8 万小参考集时期的补丁（那时末 10 轮不够、zero-shot acc 仅 0.26）；全量 ~10 万后
         论文默认已够（论文自己在 110k 上用默认拿到 0.905），此模式仅保留作对照。
@@ -23,7 +24,8 @@
       - reference（其余细胞）上**监督训练**新模型（不能复用见过全量的 scatlasvae_tcell.pt）。
       - zero-shot：setup_anndata(query, ref.pt) -> 预训练权重建 query 模型 -> predict_labels。
       - full-shot（仅设计 A）：query 标签置 undefined，与 reference concat 共训后 predict。
-      - 对照基线：reference 的 X_scVI latent 上 kNN(k=13) 迁移标签（"无专用预测头"对照）。
+      - 主表 kNN 使用既有 full-data `X_scVI`，属于 transductive 诊断；真正 reference-only、
+        query 不训练的公平版本见 `phase5_fair_knn.py`。
     指标：accuracy、macro-F1、macro one-vs-rest ROC-AUC（论文指标）+ 混淆矩阵。
 
 用法（环境 A `scatlasvae`；sklearn 由 scanpy 依赖自带）
@@ -57,6 +59,26 @@ def auto_max_epoch(n):
     return int(min(round(20000 / n * 400), 400))
 
 
+def select_patient_holdout(adata):
+    """Deterministically choose one whole patient for a batch-domain holdout.
+
+    This dataset has no study identifier.  The chosen patient maximizes cell-type
+    coverage, then cell count; this is an analogue, not paper-exact leave-study-out.
+    """
+    table = (
+        adata.obs.groupby(BATCH_KEY, observed=True)
+        .agg(n_cells=(LABEL_KEY, "size"), n_labels=(LABEL_KEY, "nunique"))
+        .reset_index()
+    )
+    table[BATCH_KEY] = table[BATCH_KEY].astype(str)
+    table = table.sort_values(
+        ["n_labels", "n_cells", BATCH_KEY], ascending=[False, False, True]
+    ).reset_index(drop=True)
+    if table.empty:
+        raise ValueError("No patient is available for design P")
+    return str(table.loc[0, BATCH_KEY]), table
+
+
 # ---------- 指标 ----------
 def macro_ovr_auc(y_true_idx, probs):
     """对 query 中真实存在(有正负样本)的类别算 one-vs-rest AUROC，再取宏平均。"""
@@ -87,6 +109,23 @@ def eval_pred(tag, design, method, y_true_str, y_pred_str, classes, probs, cm_st
             "accuracy": acc, "macro_f1": f1, "macro_ovr_auc": auc}
 
 
+def predictions_from_logits(model, logits):
+    """由同一次前向的 logits 同时派生类别、标签和概率。"""
+    logits = logits.detach().cpu().numpy() if hasattr(logits, "detach") else np.asarray(logits)
+    classes = [
+        str(category)
+        for category in model.label_category.categories
+        if category != model.unlabel_key
+    ]
+    if logits.shape[1] != len(classes):
+        raise ValueError(
+            f"分类头输出 {logits.shape[1]} 列，但有效标签类别有 {len(classes)} 个"
+        )
+    probs = softmax(logits, axis=1)
+    y_pred = np.asarray(classes, dtype=object)[np.argmax(probs, axis=1)]
+    return y_pred, classes, probs
+
+
 # ---------- scAtlasVAE 迁移 ----------
 def train_reference(adata, ref_mask, ref_pt, max_epoch, pred_last):
     import scatlasvae
@@ -96,7 +135,7 @@ def train_reference(adata, ref_mask, ref_pt, max_epoch, pred_last):
         batch_embedding="embedding", batch_hidden_dim=10, device="cuda:0",
     )
     # 分类头训练调度：源码 fit `if epoch > max_epoch - pred_last_n_epoch` 才加分类损失。
-    #   paper 协议: pred_last=10、max_epoch 自动≈80 → 末 10 轮（=论文 benchmark 同协议）。
+    #   paper 协议: pred_last=10、max_epoch 按 reference 大小自动计算 → 末 10 轮。
     #   fulltime  : pred_last=max_epoch → 全程（小参考集时期补丁，全量下非必需）。
     m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last)
     m.save_to_disk(ref_pt)
@@ -131,12 +170,9 @@ def zeroshot_predict(adata, query_mask, ref_pt):
         adata=q, pretrained_state_dict=state_dict["model_state_dict"],
         device="cuda:0", **cfg,
     )
-    pred_df = qm.predict_labels(return_pandas=True)
-    y_pred = pred_df[LABEL_KEY].astype(str).values
+    # 只做一次随机 latent 前向；标签、概率和 AUROC 必须来自同一份 logits。
     logits = qm.predict_labels(return_pandas=False)
-    logits = logits.detach().cpu().numpy() if hasattr(logits, "detach") else np.asarray(logits)
-    classes = list(qm.label_category.categories)
-    probs = softmax(logits, axis=1)
+    y_pred, classes, probs = predictions_from_logits(qm, logits)
     return y_true, y_pred, classes, probs
 
 
@@ -153,20 +189,18 @@ def fullshot_predict(adata, ref_mask, query_mask, max_epoch, pred_last):
         batch_embedding="embedding", batch_hidden_dim=10, device="cuda:0",
     )
     m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last)   # 与参考同协议
-    pred_df = m.predict_labels(return_pandas=True)
-    y_pred = pred_df.loc[q_index, LABEL_KEY].astype(str).values
-    classes = list(m.label_category.categories)
+    # 只做一次随机 latent 前向；随后从同一份 logits 中截取 query 并派生全部指标。
     logits_all = m.predict_labels(return_pandas=False)
-    logits_all = logits_all.detach().cpu().numpy() if hasattr(logits_all, "detach") else np.asarray(logits_all)
     # 取 query 行的 logits（predict_labels 的行序 = self.adata.obs 行序 = merged 行序）
     pos = {idx: i for i, idx in enumerate(list(merged.obs.index))}
     qrows = [pos[i] for i in q_index]
-    probs = softmax(logits_all[qrows], axis=1)
+    logits_query = logits_all[qrows]
+    y_pred, classes, probs = predictions_from_logits(m, logits_query)
     return y_true, y_pred, classes, probs
 
 
 def knn_baseline(adata, ref_mask, query_mask, rep="X_scVI"):
-    """对照：在(无监督) X_scVI latent 上 kNN 从 reference 迁移标签到 query。"""
+    """Transductive 诊断：在既有 full-data X_scVI 上做 reference→query kNN。"""
     Z = adata.obsm[rep]
     yt = adata.obs[LABEL_KEY].astype(str).values
     knn = KNeighborsClassifier(n_neighbors=KNN_K)
@@ -181,26 +215,37 @@ def knn_baseline(adata, ref_mask, query_mask, rep="X_scVI"):
 def run_design(adata, design, protocol, fulltime_max_epoch, out_csv, out_npz, rows, cm_store):
     rng = np.random.default_rng(SEED)
     n = adata.n_obs
+    query_definition = ""
     if design == "A":
         query_mask = np.zeros(n, dtype=bool)
         q_idx = rng.choice(n, size=int(round(0.05 * n)), replace=False)
         query_mask[q_idx] = True
-    else:  # B：整癌种留作 query
+        query_definition = "random 5% cells"
+    elif design == "B":  # whole-cancer biological OOD extension
         query_mask = (adata.obs["cancerType"].astype(str).values == DROP_CANCER)
         if query_mask.sum() == 0:
             print(f"  [跳过] 设计 B：数据里没有癌种 {DROP_CANCER}")
             return
+        query_definition = f"leave one cancer: {DROP_CANCER}"
+    else:  # P: closest available analogue to leaving one batch/domain out
+        patient, patient_table = select_patient_holdout(adata)
+        query_mask = (adata.obs[BATCH_KEY].astype(str).values == patient)
+        selected = patient_table.loc[patient_table[BATCH_KEY] == patient].copy()
+        selected.insert(0, "design", "P")
+        selected.insert(1, "interpretation", "leave-one-patient batch-domain analogue")
+        selected.to_csv("phase5_patient_holdout_selection.csv", index=False)
+        query_definition = f"leave one patient: {patient}"
     ref_mask = ~query_mask
     n_ref = int(ref_mask.sum())
 
     # 协议决定 max_epoch 与 pred_last_n_epoch
     if protocol == "paper":
-        max_epoch = auto_max_epoch(n_ref)     # 自动≈80
+        max_epoch = auto_max_epoch(n_ref)
         pred_last = 10                         # 论文默认
     else:  # fulltime
         max_epoch = fulltime_max_epoch         # 150
         pred_last = fulltime_max_epoch         # 全程
-    print(f"\n=== 设计 {design}（protocol={protocol}）：reference n={n_ref} / query n={int(query_mask.sum())}"
+    print(f"\n=== 设计 {design} ({query_definition}; protocol={protocol})：reference n={n_ref} / query n={int(query_mask.sum())}"
           f" | max_epoch={max_epoch}, pred_last_n_epoch={pred_last} ===")
 
     ref_pt = f"ref_model_design{design}_{protocol}.pt"
@@ -218,7 +263,7 @@ def run_design(adata, design, protocol, fulltime_max_epoch, out_csv, out_npz, ro
         yt, yp, cls, pr = fullshot_predict(adata, ref_mask, query_mask, max_epoch, pred_last)
         rows.append(eval_pred(f"{design}_fullshot", design, "scAtlasVAE (full-shot)", yt, yp, cls, pr, cm_store))
 
-    # kNN on scVI latent 对照
+    # 旧 full-data X_scVI 上的 transductive 诊断；公平 reference-only 版本另见 phase5_fair_knn.py。
     if "X_scVI" in adata.obsm:
         yt, yp, cls, pr = knn_baseline(adata, ref_mask, query_mask, rep="X_scVI")
         rows.append(eval_pred(f"{design}_knn_scvi", design, "kNN on scVI latent", yt, yp, cls, pr, cm_store))
@@ -230,7 +275,9 @@ def run_design(adata, design, protocol, fulltime_max_epoch, out_csv, out_npz, ro
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--designs", nargs="+", default=["A", "B"], choices=["A", "B"])
+    ap.add_argument("--designs", nargs="+", default=["A", "B"], choices=["A", "B", "P"],
+                    help="A=random 5%%; B=leave UCEC cancer (biological OOD); "
+                         "P=leave one whole patient (batch-domain analogue)")
     ap.add_argument("--protocol", choices=["paper", "fulltime"], default="paper",
                     help="paper=论文协议(pred_last_n_epoch=10、max_epoch自动，与论文benchmark同起跑线，推荐)；"
                          "fulltime=分类头全程训练(旧小参考集补丁，仅作对照)")
@@ -239,7 +286,10 @@ def main():
     args = ap.parse_args()
 
     # 按协议分文件，避免覆盖对照结果
-    suffix = "" if args.protocol == "fulltime" else "_paper"
+    if args.designs == ["P"]:
+        suffix = "_patient_fulltime" if args.protocol == "fulltime" else "_patient_paper"
+    else:
+        suffix = "" if args.protocol == "fulltime" else "_paper"
     out_csv = f"phase5_transfer_results{suffix}.csv"
     out_npz = f"phase5_transfer_cm{suffix}.npz"
 

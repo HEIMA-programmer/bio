@@ -1,0 +1,149 @@
+# Apply from the upstream scAtlasVAE repository root with `git apply`.
+diff --git a/scatlasvae/model/_gex_model.py b/scatlasvae/model/_gex_model.py
+--- a/scatlasvae/model/_gex_model.py
++++ b/scatlasvae/model/_gex_model.py
+@@ -688,6 +691,20 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+             else:
+                 self.label_category = pd.Categorical(list(self.adata.obs[self.label_key]))
+ 
++            # Classifier outputs have ``n_label`` columns and therefore exclude
++            # the unlabelled sentinel.  Keep that sentinel last so every valid
++            # categorical code remains aligned with output columns 0..n_label-1,
++            # even when the caller supplied a custom Categorical order.
++            if self.unlabel_key in self.label_category.categories:
++                valid_categories = [
++                    x for x in self.label_category.categories
++                    if x != self.unlabel_key
++                ]
++                self.label_category = pd.Categorical(
++                    list(self.label_category),
++                    categories=valid_categories + [self.unlabel_key]
++                )
++
+             self.label_category_summary = dict(Counter(list(filter(lambda x: x != self.unlabel_key, self.label_category))))
+ 
+             for k in self.label_category.categories:
+@@ -740,6 +757,16 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+                 get_category(self.adata.obs[x])
+                 for x in self.additional_label_keys
+             ]
++            self.additional_label_category = [
++                pd.Categorical(
++                    list(category),
++                    categories=(
++                        [x for x in category.categories if x != self.unlabel_key]
++                        + [self.unlabel_key]
++                    )
++                ) if self.unlabel_key in category.categories else category
++                for category in self.additional_label_category
++            ]
+             
+             self.additional_label_category_summary = [dict(Counter(x)) for x in self.additional_label_category]
+             for i in range(len(self.additional_label_category_summary)):
+@@ -1065,6 +1092,7 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+         kldiv_loss = kld(Normal(q_mu, q_var.sqrt()), Normal(mean, scale)).sum(dim = 1)
+         prediction_loss = torch.tensor(0., device=self.device)
+         additional_prediction_loss = torch.tensor(0., device=self.device)
++        n_active_prediction_heads = 0
+         R = self.decode(H, lib_size, batch_index, label_index, additional_batch_index)
+ 
+         if self.reconstruction_method == 'zinb':
+@@ -1106,26 +1134,49 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+ 
+             prediction = self.fc(H['z'])
+ 
+-            if self.new_adata_code and self.new_adata_code in label_index:
+-                prediction_index = (label_index != self.new_adata_code).squeeze()
+-                prediction_loss = criterion(prediction[prediction_index], one_hot(label_index[prediction_index], self.n_label))
++            # A minibatch may contain only cells that are unlabelled for this
++            # head (common in multi-atlas training, especially for the final
++            # short minibatch).  CrossEntropyLoss on an empty tensor is NaN.
++            # Build an explicit 1-D mask, including when the unlabelled code is
++            # category 0, and leave this head's loss at zero when no target is
++            # available.
++            if self.new_adata_code is not None and self.new_adata_code >= 0:
++                prediction_index = (label_index != self.new_adata_code).reshape(-1)
+             else:
+-                prediction_loss = criterion(prediction, one_hot(label_index, self.n_label))
++                prediction_index = torch.ones(
++                    label_index.shape[0], dtype=torch.bool, device=label_index.device
++                )
++            if prediction_index.any().item():
++                prediction_loss = criterion(
++                    prediction[prediction_index],
++                    one_hot(label_index[prediction_index], self.n_label)
++                )
++                n_active_prediction_heads += 1
+ 
+         if self.n_additional_label is not None:
+             prediction_loss = prediction_loss * self.additional_label_weight[0]
+             for e,i in enumerate(self.n_additional_label):
+                 criterion = nn.CrossEntropyLoss(weight=self.additional_label_category_weight[e])
+                 additional_prediction = self.additional_fc[e](H['z'])
+-                if self.additional_new_adata_code[e] and self.additional_new_adata_code[e] in additional_label_index[e]:
+-                    additional_prediction_index = (additional_label_index[e] != self.additional_new_adata_code[e]).squeeze()
+-
++                unlabelled_code = self.additional_new_adata_code[e]
++                if unlabelled_code is not None and unlabelled_code >= 0:
++                    additional_prediction_index = (
++                        additional_label_index[e] != unlabelled_code
++                    ).reshape(-1)
++                else:
++                    additional_prediction_index = torch.ones(
++                        additional_label_index[e].shape[0],
++                        dtype=torch.bool,
++                        device=additional_label_index[e].device
++                    )
++                if additional_prediction_index.any().item():
+                     additional_prediction_loss += criterion(
+                         additional_prediction[additional_prediction_index],
+-                        one_hot(additional_label_index[e][additional_prediction_index], i) * self.additional_label_weight[e+1]
++                        one_hot(
++                            additional_label_index[e][additional_prediction_index], i
++                        ) * self.additional_label_weight[e+1]
+                     )
+-                else:
+-                    additional_prediction_loss += criterion(additional_prediction, one_hot(additional_label_index[e], i)) * self.additional_label_weight[e+1]
++                    n_active_prediction_heads += 1
+ 
+         latent_constrain = torch.tensor(0.)
+         if self.constrain_latent_embedding and P is not None:
+@@ -1173,6 +1224,7 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+             "reconstruction_loss": reconstruction_loss,
+             "prediction_loss": prediction_loss,
+             "additional_prediction_loss": additional_prediction_loss,
++            "n_active_prediction_heads": n_active_prediction_heads,
+             "kldiv_loss": kldiv_loss,
+             "mmd_loss": mmd_loss,
+             "latent_constrain_loss": latent_constrain
+@@ -1412,9 +1464,12 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+ 
+                     avg_gate_loss = gate_weight * torch.sigmoid(R['px_rna_dropout']).sum(dim=1).mean()
+ 
+-                    avg_reconstruction_loss = reconstruction_loss.sum()  / n_per_batch
+-                    avg_kldiv_loss = kldiv_loss.sum()  / n_per_batch
+-                    avg_mmd_loss = mmd_loss / n_per_batch
++                    # The final minibatch is often smaller than ``n_per_batch``.
++                    # Normalizing by the configured size underweights those cells.
++                    actual_batch_size = X.shape[0]
++                    avg_reconstruction_loss = reconstruction_loss.sum() / actual_batch_size
++                    avg_kldiv_loss = kldiv_loss.sum() / actual_batch_size
++                    avg_mmd_loss = mmd_loss / actual_batch_size
+ 
+                     epoch_reconstruction_loss += avg_reconstruction_loss.item()
+                     epoch_kldiv_loss += avg_kldiv_loss.item()
+@@ -1425,7 +1480,13 @@ class scAtlasVAE(ReparameterizeLayerBase, MMDLayerBase):
+                         epoch_prediction_loss += prediction_loss.sum().item()
+ 
+                     if epoch > max_epoch - pred_last_n_epoch:
+-                        loss = avg_reconstruction_loss + avg_kldiv_loss * kl_weight + avg_mmd_loss + (prediction_loss.sum() + additional_prediction_loss.sum()) / (len(self.n_additional_label) if self.n_additional_label is not None else 0 + 1) + avg_gate_loss
++                        # Average classification loss over the primary head and all
++                        # additional heads.  Parentheses matter here: the previous
++                        # conditional expression omitted the primary head whenever
++                        # additional labels were present.
++                        n_prediction_heads = max(L['n_active_prediction_heads'], 1)
++                        avg_prediction_loss = (prediction_loss.sum() + additional_prediction_loss.sum()) / n_prediction_heads
++                        loss = avg_reconstruction_loss + avg_kldiv_loss * kl_weight + avg_mmd_loss + avg_prediction_loss + avg_gate_loss
+                     else:
+                         loss = avg_reconstruction_loss + avg_kldiv_loss * kl_weight + avg_mmd_loss + avg_gate_loss
+ 

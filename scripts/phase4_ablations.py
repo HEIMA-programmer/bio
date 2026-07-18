@@ -14,6 +14,9 @@
 对应报告：reports/phase4_ablation_studies.md
 """
 import argparse
+import matplotlib
+
+matplotlib.use("Agg")
 import scanpy as sc
 
 PROC_PATH = "tcell_processed.h5ad"
@@ -52,7 +55,7 @@ def train():
     print("消融训练完成：obsm 里新增 X_nlat2 / X_nlat10 / X_nlat50 / X_nowarmup")
 
 
-def benchmark():
+def benchmark(n_jobs: int = 4):
     from scib_metrics.benchmark import Benchmarker
     adata = sc.read_h5ad(PROC_PATH)
     keys = ["X_nlat2", "X_nlat10", "X_nlat50", "X_nowarmup"]
@@ -60,7 +63,7 @@ def benchmark():
     # （修 PCR comparison 恒为 0；X_pca 由 phase2 预处理写入，消融 h5ad 里已有）。
     bm = Benchmarker(adata, batch_key=BATCH_KEY, label_key=LABEL_KEY,
                      embedding_obsm_keys=keys,
-                     pre_integrated_embedding_obsm_key="X_pca", n_jobs=-1)
+                     pre_integrated_embedding_obsm_key="X_pca", n_jobs=n_jobs)
     bm.benchmark()
     res = bm.get_results(min_max_scale=False)
     print(res)
@@ -71,5 +74,11 @@ def benchmark():
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["train", "benchmark"], required=True)
+    ap.add_argument(
+        "--n-jobs",
+        type=int,
+        default=4,
+        help="评测阶段的有限并行数；Windows 上避免 n_jobs=-1 过度并行或收尾停滞",
+    )
     args = ap.parse_args()
-    train() if args.stage == "train" else benchmark()
+    train() if args.stage == "train" else benchmark(n_jobs=args.n_jobs)

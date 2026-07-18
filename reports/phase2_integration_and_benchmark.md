@@ -3,7 +3,7 @@
 > **阶段** 2 / 6　·　**前置**：[阶段 1 · 环境搭建](phase1_environment_setup.md)　·　**产出**：整合前后 UMAP + 指标对比表 + 三份脚本　·　**预计** 3–4 天
 > **导航**：[← 阶段 1](phase1_environment_setup.md)　·　[总纲](00_overview_and_learning_map.md)　·　[知识框架](01_concepts_and_toolbox.md)　·　[阶段 3 →](phase3_reimplement_vae.md)
 >
-> **本阶段结果已为本机 RTX 4060 真实实跑**：数据 = GSE156728 的 10X CD8 **全量 ~10.5 万细胞**（与论文 TCellLandscape 同量级）；baseline 用 **scVI**（scvi-tools；Windows 需先开长路径才能装，本机单独建 `scvi` 环境）。指标表、UMAP、loss 曲线均为真实数据（含一处已修的 scib PCR 基线 bug，见 §7）。
+> **本阶段结果均为本机真实实跑**：数据 = GSE156728 的 10X CD8 **全量 ~10.5 万细胞**（与论文 benchmark 同量级）；scAtlasVAE 使用 RTX 4060，baseline **scVI** 与 scib-metrics 在各自独立环境中运行（本机该 scVI 环境为 CPU）。指标表、UMAP、loss 曲线均为真实数据（含已修的 scib PCR 基线与官方训练损失问题，见 §7）。
 
 ---
 
@@ -14,13 +14,13 @@
 - **能力 A — 拿到一份陌生单细胞数据，怎么自己"验货"**：格式对不对、能不能直接喂给模型。
 - **能力 B — 怎么判断"整合到底好不好"**：这需要一套**量化指标**，而不是肉眼看 UMAP 图觉得"挺好"。
 
-这一阶段属于复现谱系里的 **L1**（用作者代码 + 真实数据，重现论文结论）。判定成功仍是**趋势对上**（批次被混开、细胞类型分得开、scAtlasVAE 与 scVI 相当或更好），不是数字与论文一致。
+这一阶段是**近似 L1**：使用作者代码与同源真实数据，但不是带 28 个 `study_name` 的论文成品对象。证据来自当前 `patient` batch + `scib-metrics` 口径下预先定义的定量指标和同口径基线；它只能支持方向性的内部比较，不能仅凭 UMAP/“趋势对上”，也不能把绝对值与论文旧口径逐点对齐。
 
 **全流程一图**（本阶段就是把它跑出来）：
 
 ![scAtlasVAE 整合效果（真实）](figures/fig_phase2_integration_umap.png)
 
-*图 2-1 — **本机真实结果**（全量 ~10.5 万 CD8 细胞）。上排未校正 X_pca、下排 scAtlasVAE；左列按癌种(batch)、右列按 17 个 CD8 亚型上色。可见整合后**癌种/批次更混合**、而 Tn/Tem/Temra/Tex 等**细胞类型仍分得开**——定量见 §7。*
+*图 2-1 — **本机真实结果**（全量 ~10.5 万 CD8 细胞）。上排未校正 X_pca、下排 scAtlasVAE；左列按模型与指标实际使用的患者(batch)、右列按 17 个 CD8 亚型上色。可见整合后**患者批次更混合**、而 Tn/Tem/Temra/Tex 等**细胞类型仍分得开**——定量见 §7。*
 
 ---
 
@@ -46,7 +46,7 @@
   1. **论文 Methods 的 "Benchmarking" 段**（PDF 里搜 `GSE156728`）明写："pan-cancer CD8⁺ T cell landscape containing **110,218 cells from 28 studies** (data available at **GSE156728**)"。
   2. **[总纲](00_overview_and_learning_map.md) 的复现路线**指向同一个 GEO 号。
   3. **官方文档** `gex_integration` 教程给了 CD8 数据的用法示例。
-- **结论**：主力数据 = **TCellLandscape**（Zheng *et al.* 2021 泛癌 T 细胞图谱，GEO **GSE156728**，约 11 万 CD8⁺ 细胞）。它公开、无需申请、11 万在 4060 上很舒适，且**本就是论文真实做过的 benchmark**——你复现的是真实验，不是玩具。
+- **结论（本轮审计更正）**：当前可从 GEO **GSE156728** 重建的是 Zheng *et al.* 2021 的 10X CD8 主体；本项目实际使用其中 8 个癌种的 **104,805** 个细胞。它与论文 110,218-cell benchmark 同量级、也是其占绝对多数的主体，但**不是论文已经拼好并带 28 个 `study_name` 的成品 TCellLandscape 对象**。因此这是同源真实数据上的近似复现，不是 28-study 设置的逐项复刻。
 
 > **为什么不用全 115 万 atlas**：那是受控数据 + 巨大算力，学习增益却很低（见[总纲 §3–4](00_overview_and_learning_map.md)）。11 万的 benchmark 足以复现"方法相对排序"这一核心结论。
 
@@ -118,7 +118,7 @@ $a(i)$ 是它到同簇其他点的平均距离、$b(i)$ 是到最近异簇的平
 
 > **常见坑（务必写进报告）**：论文用的是**旧版 `scib`(1.1.4)**，我们用现代 `scib-metrics`，官方明确说**两者数值不可直接比**。所以你算出的绝对分数不必和论文表格对齐——**只看方法之间的相对排序**（scAtlasVAE vs scVI vs 未校正 PCA）是否符合论文结论。
 
-**三个对照对象**：`X_pca`（未校正基线）、`X_scVI`（经典 batch-variant VAE，编码器吃 batch）、`X_scAtlasVAE`（本方法，编码器 batch-invariant）。
+**三个对照对象**：`X_pca`（未校正基线）、`X_scVI`（batch-conditioned 生成模型；本项目默认 `encode_covariates=False`，encoder 不显式接收 batch）、`X_scAtlasVAE`（源码结构固定为 encoder 只接收 X）。两种结构都不保证 X 中的批次信号自动消失，整合效果仍由 patient-based 指标判断。
 
 > **scvi-tools 的 Windows 安装坑（记一笔）**：`scvi-tools` 依赖 JAX 生态的 `orbax-checkpoint`，包内有超长路径测试文件，在**未开长路径**的 Windows 上会触发 260 字符上限而装不上。解决：以管理员执行 `Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1`、重开终端即可。本机据此单独建了 `scvi`(py3.10) 环境跑 scVI。（另附 [`phase2_baseline_harmony.py`](../scripts/phase2_baseline_harmony.py)：Harmony 作为可选的第二基线，不需要 scvi-tools。）
 
@@ -138,7 +138,7 @@ pip install scib-metrics scanpy scvi-tools
 
 ### 步骤 2 · 下载并验货（环境 A）
 
-**目的**：拿到 TCellLandscape、按 §3.2 清单验货、确定 batch/label 列名。
+**目的**：从 GSE156728 重建并验收 104,805-cell Zheng CD8 对象、按 §3.2 清单验货、确定 batch/label 列名；该对象不是论文带 28 个 `study_name` 的成品 TCellLandscape。
 
 ```powershell
 conda activate scatlasvae
@@ -217,37 +217,37 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 |---|---|---|---|
 | `X_pca`（未校正） | 0.271 | 0.486 | 0.400 |
 | `X_scVI` | 0.312 | 0.485 | 0.416 |
-| `X_scAtlasVAE_unsup`（无监督） | 0.289 | 0.481 | 0.404 |
-| **`X_scAtlasVAE_sup`（监督）** | **0.324** | **0.509** | **0.435** |
+| `X_scAtlasVAE_unsup`（无监督） | 0.309 | 0.478 | 0.411 |
+| **`X_scAtlasVAE_sup`（监督）** | **0.336** | **0.515** | **0.444** |
 
 > **两处更正（都值得记，是本项目最实的"诚实"）**：
-> 1. **监督/无监督**：早先这里只有一根 `X_scAtlasVAE` 柱，其实它**传了 `label_key`、是监督版**。补上无监督版后：**监督(0.435) 明显最高、且批次校正与生物保留两项都最高**；无监督(0.404)≈PCA、略低于 scVI——scAtlasVAE 相对 scVI 的优势来自**半监督分类头**。
-> 2. **一个 scib-metrics 配置 bug（修复后结论更保守也更真实）**：早先 `PCR comparison` 这一列对所有方法**恒为 0**，且 `X_pca` 基线被 Benchmarker 用**原始计数**现算的 PCA 覆盖（生物保留被压到 0.37）。根因：没给 `pre_integrated_embedding_obsm_key`、而我们 `adata.X` 是原始计数（详见脚本注释与 [阶段 5 · E5](phase5_deeper_validation.md)）。**修复后**：PCR 恢复区分度（监督 0.097 > scVI 0.082 ≫ 无监督/PCA≈0），而**正确的 scaled-log PCA 基线生物保留高达 0.486**——所以旧稿"VAE ≫ PCA"里那道大差距，**一部分是 bug 把 PCA 基线算错造成的假象**。
+> 1. **监督/无监督**：早先这里只有一根 `X_scAtlasVAE` 柱，其实它**传了 `label_key`、是监督版**。按修复后的官方训练代码重训并补上无监督版后：**监督(0.444) 明显最高、且批次校正与生物保留两项都最高**；无监督(0.411)接近 scVI(0.416)——scAtlasVAE 相对 scVI 的主要增益来自**半监督分类头**。
+> 2. **一个 scib-metrics 配置 bug（修复后结论更保守也更真实）**：早先 `PCR comparison` 这一列对所有方法**恒为 0**，且 `X_pca` 基线被 Benchmarker 用**原始计数**现算的 PCA 覆盖（生物保留被压到 0.37）。根因：没给 `pre_integrated_embedding_obsm_key`、而我们 `adata.X` 是原始计数（详见脚本注释与 [阶段 5 · E5](phase5_deeper_validation.md)）。**修复后重跑**：PCR 恢复区分度（监督 0.130 > scVI 0.082 > 无监督 0.059 > PCA 0），而**正确的 scaled-log PCA 基线生物保留高达 0.486**——所以旧稿"VAE ≫ PCA"里那道大差距，**一部分是 bug 把 PCA 基线算错造成的假象**。
 
 **怎么读这张表（相对排序 = 复现判据）**：
 
-- **总分排序**：**监督 scAtlasVAE(0.435) > scVI(0.416) > 无监督(0.404) ≈ 未校正 PCA(0.400)**。注意 scib-metrics 的总分 = **0.4·批次校正 + 0.6·生物保留**（生物保留权重更大，见 [_core.py](../../scAtlasVAE) 里的 scIB 默认加权），而 scaled PCA 的生物保留本就很高，**所以"总分"上 PCA 是个比想象中强得多的基线**，"≫ PCA"在总分口径下**不再成立**。
-- **VAE 相对 PCA 的真实优势在"批次校正"这一列**：PCA 0.271 < 无监督 0.289 < scVI 0.312 < **监督 0.324**——这才是 §5"两类指标缺一不可"的正确体现（PCA 生物保留高但批次混不开）。
-- **对上论文的哪一条**：论文 **Ext. Data Fig. 2a** 说"无监督与 scVI 相当、监督才明显胜出"；我们**监督明显最高**这条稳稳复现，"无监督≈scVI"则更靠下一点（无监督略低于 scVI）——合理原因见下。
+- **总分排序**：**监督 scAtlasVAE(0.444) > scVI(0.416) ≈ 无监督(0.411) > 未校正 PCA(0.400)**。注意 scib-metrics 的总分 = **0.4·批次校正 + 0.6·生物保留**（生物保留权重更大，见 [_core.py](../../scAtlasVAE) 里的 scIB 默认加权），而 scaled PCA 的生物保留本就很高，**所以"总分"上 PCA 是个比想象中强得多的基线**，"≫ PCA"在总分口径下**不再成立**。
+- **VAE 相对 PCA 的真实优势在"批次校正"这一列**：PCA 0.271 < 无监督 0.309 ≈ scVI 0.312 < **监督 0.336**——这才是 §5"两类指标缺一不可"的正确体现（PCA 生物保留高但患者批次混不开）。
+- **与论文同向的哪一条**：论文 Ext. Data Fig. 2a 说"无监督与 scVI 相当、监督明显胜出"；我们的内部相对排序复现了这个方向。但 batch 键与指标实现不同，不能称逐点复现。
 - **为何绝对分/差距和论文不同**：① 我们 batch=**patient**（同一研究内、批次效应弱），论文 batch=**study**（跨 28 研究、批次效应强），差距被压扁；② scib-metrics ≠ 论文旧 scib，指标口径不同（对照见 [阶段 5 · E5](phase5_deeper_validation.md)）。**判据是相对排序，不是绝对值对齐。**（batch 键这条很关键，单列一段说明见下方 ⬇️）
 - **（附）第二基线 Harmony**：另用 [`phase2_baseline_harmony.py`](../scripts/phase2_baseline_harmony.py) 跑过 Harmony（线性迭代式校正）作互补对照，想加进对比把 `X_harmony` 塞进 `phase2_benchmark_scib.py` 的 `EMBEDDINGS` 即可。
 
 > **⬇️ 为什么我们用 `batch=patient` 而不是论文的 `study`（重要的诚实设置说明）**
 >
 > **这不是随手一填，也不是完全的自由选择，而是"在数据里真实存在的字段中主动挑了 patient"：**
-> - **GSE156728 的公开 metadata 里根本没有 `study` 这一列**。原始 `GSE156728_metadata.txt.gz` 只有 7 列：`cellID / cancerType / patient / libraryID / loc / meta.cluster / platform`——**没有**论文所说的那个 28 值 `study_name`。我们真正能当 batch 用的只有 `patient`(45)、`cancerType`(8)、`libraryID`(样本/文库级) 等；**在这些里我们主动选了 `patient`**（最标准、最细的样本级批次）。
+> - **GSE156728 的公开 metadata 里根本没有 `study` 这一列**。原始 `GSE156728_metadata.txt.gz` 只有 7 列：`cellID / cancerType / patient / libraryID / loc / meta.cluster / platform`——**没有**论文所说的那个 28 值 `study_name`。技术/样本批次候选主要是 `patient`(45) 与 `libraryID`；`cancerType`(8) 是生物变量、不能拿来顶替 batch。这里选 `patient`（最清楚的患者/样本域）。
 > - **我们下的数据对不对？——用细胞数核实：对，拿到了 95%。** 数 `GSE156728_metadata.txt.gz` 里全部 CD8 细胞（meta.cluster 以 CD8 开头）：**Zheng 自产 CD8 共 109,389**（10X 109,089 + SS2 300），论文 **TCellLandscape CD8 = 110,218**，差 829（0.75%）。我们的 104,805 精确对上：`104,805（8 癌种 10X）+ OV(3,517) + FTC(767) + CHOL的SS2(300) = 109,389`——即**拿了 GSE156728 里 CD8 的 95%**，只漏 OV/FTC/CHOL 3 个小队列（~4,584）。补齐就再下 `GSE156728_OV_10X.CD8.counts` 与 `GSE156728_FTC_10X.CD8.counts`。
 > - **那"28 studies"到底是啥？（已查 Supp Table 1）** 论文 **Supplementary Table 1** 把 TCellLandscape 标注为 **28 个源研究的合集**（`Zheng_2021` + `van Galen_2019 / Yost_2019 / Guo_2018 / Savas_2018 / Zilionis_2019 / Zheng_2017 / Zhang_2018/2019/2020 / Ma_2019 / Li_2019 / Jerby-Arnon_2018 / …` 等 ~17 个外部数据集），`study_name` 就是每个细胞的**源研究名**。**但**其 CD8 总数（110,218）≈ GSE156728 里 Zheng 自产 CD8（109,389）——说明 **Zheng 自产数据占绝大多数、外部源贡献很小**；每个源的确切细胞数拆分不在公开文件里（在 Zenodo 成品对象里）。**关键点不变**：这套 28 路 `study_name` 是作者组装图谱时**贴的来源标签**，**不在 GSE156728 的基础 metadata**（只有 `cancerType`/`patient`/`libraryID`/`platform`），所以我们从原始计数出发拿不到它。〔更正记录：这条我先后读错过两次——先从多面板图注误合并、又据细胞数误判成"纯 Zheng、非合集"；现以 Supp Table 1「28 源合集」+ 细胞数「Zheng 占绝大多数」二者并存为准。〕
 > - **所以为何用 `patient`**：我们下到的是 Zheng 自产、**10X 平台、8 个癌种**这一块，内部同源，**没有 28 路 study 标签可用**，能当 batch 的真实字段只有 `patient`(45)/`cancerType`(8)/`libraryID`——我们主动选了最标准的 `patient`。
 > - **对结果的影响（诚实、且偏保守）**：`patient`（同研究/同平台内）要校正的批次效应，比论文那种带内部多队列 `study_name` 的设定弱 → 各方法（PCA/scVI/scAtlasVAE）能拉开的差距被压扁，但**方向不变**（监督最高、VAE>PCA）。**batch 越弱，越难显出"scAtlasVAE 校正得更好"，所以这个设置是让方法更不容易赢、而非往好看里修**——是保守的复现，不是取巧。真正的强跨研究场景，我们用 **[Task 2](phase5_deeper_validation.md)（引入 Yost 2019 作第二图谱）** 专门补回。
-> - **想把这条从"论证"变"实测"**：可另跑一版 `batch=cancerType`（8 个癌种队列，语义上比 patient 更接近"study/cohort"）重训四方 benchmark，看差距是否如预期被拉大、更贴论文（本项目暂未做，作为可选稳健性检验）。
+> - **不能把 `cancerType` 改当 batch 来补 study**：癌种是需要保留的**生物变量**，不是技术批次。按癌种上色的 UMAP 可以描述癌种结构，却不能证明 `patient` batch 已被移除；把癌种作为校正目标还可能主动抹掉真实生物差异。若要精确复现 leave-one-study，只能取得带 `study_name` 的论文成品对象或重新可靠映射每个细胞的来源研究。
 
 **记录区（本机实测）**：
 ```
 数据：细胞数=104805（GSE156728 全量 CD8 10X，8 癌种）  batch列=patient(45)  label列=cell_type(17 个 CD8 亚型)  基因=4000 HVG
 训练：scAtlasVAE epoch=76（自动=min(round(20000/N·400),400)）  有无NaN=无  λ_KL 末值≈1
-指标（真实，总分，PCR已修）：X_pca=0.400 / X_scVI=0.416 / scAtlasVAE(无监督)=0.404 / scAtlasVAE(监督)=0.435
-批次校正一列（VAE 真实优势）：PCA 0.271 < 无监督 0.289 < scVI 0.312 < 监督 0.324
+指标（真实，总分，PCR与训练损失均已修）：X_pca=0.400 / X_scVI=0.416 / scAtlasVAE(无监督)=0.411 / scAtlasVAE(监督)=0.444
+批次校正一列（VAE 真实优势）：PCA 0.271 < 无监督 0.309 ≈ scVI 0.312 < 监督 0.336
 结论与论文趋势：监督 scAtlasVAE 两项皆最高（复现 Ext.Data Fig.2a 的"监督胜出"）；"≫PCA"仅在批次校正列成立、总分口径下 PCA 是强基线
 ```
 
@@ -255,7 +255,7 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 
 ## 7.1 与论文 Supplementary Table 3 的交叉验证（同一份 Zheng 数据，强背书）
 
-论文的 **Supplementary Table 3** 给出了各方法在 **"Benchmark 1: single-atlas integration of CD8+ T cells from Zheng et al., 2021"**（就是 TCellLandscape，和我们**同一份数据**）上的原始分数。这让我们能**直接对标论文自己的数字**，而不只是"趋势相符"。
+论文 Supplementary Table 3 给出了 "Benchmark 1: single-atlas integration of CD8+ T cells from Zheng et al., 2021" 的分数。我们的 GSE156728 重建对象来自同一 Zheng 数据来源、规模接近，但过滤后为 104,805 细胞且缺少成品对象的 `study_name`，因此这些论文数字只作背景参照，不能逐点直接对标。
 
 **① 生物保留核心指标（label silhouette，与 batch 层级无关）——方向和我们完全一致：**
 
@@ -265,20 +265,20 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 | scVI | 0.492 | ✅ 无监督 ≈ scVI |
 | scAtlasVAE（无监督） | 0.487 | ✅ 略低于 scVI |
 
-> 论文在 Zheng 数据上把批次指标**同时按 `sample_name` 和 `study_name` 两个层级**都算了（`silhouette_batch ASW (sample_name)` 与 `(study_name)`、`pcr_comparison (sample_name)` 与 `(study_name)`）。**关键：方法排序在两个层级下一致**（监督最高、无监督≈scVI），而 label silhouette 这种生物指标根本不看 batch。**我们的 `batch=patient` ≈ 论文的 `sample_name` 层级——本就是论文报告的正当层级之一，我们已复现了它要证明的结论。** 论文 graph connectivity 亦同向（监督 0.871 > scVI 0.811 > 无监督 0.777）。
+> 论文同时按 `sample_name` 与 `study_name` 两个层级计算批次指标，方法排序方向一致。我们的 `patient` 是当前最接近 sample/domain 的代理，但没有可靠字段映射证明它等同于论文 `sample_name`；因此这里能说的是内部排序与论文方向一致，不能说 batch 层级完全复刻。
 
-**② 注释迁移（Benchmark 3，Zheng 数据）——同量级、打平略低（论文协议下）：**
+**② 注释迁移（Benchmark 3，Zheng 来源数据）——A 的留出单位可对应，数据对象仍非完全相同：**
 
 | | 论文 scAtlasVAE zero-shot | 我们（论文协议·末10轮） |
 |---|---|---|
-| 随机留 5% | 0.905 | **0.888** |
-| 留一个 study/整癌种 | 0.859 | **0.848** |
+| 随机留 5% | 0.905 | **0.891** |
+| 留一个 study | 0.859 | **当前数据无 `study_name`，不能做精确对应** |
 
-> 注：此处我们用**论文默认协议**（分类头训末 10 轮）对标——比论文略低 0.01–0.02、在波动内。若把分类头改成全程训练会到 0.939/0.903，但那是超出论文协议的过训练，不作对标（详见 [阶段 5 · E1](phase5_deeper_validation.md)）。
+> 注：随机留 5% 可以和论文对应；本项目另做的整癌种 UCEC（设计 B）是**生物域外泛化**，整位 patient（设计 P）是当前字段下最接近的**批次/样本域留出类比**，两者都不能冒充论文的 leave-one-study。若要比较 B/P，只能在本项目内部比较方法，不能把它们与论文 0.859 的差值解释成复现误差。
 
 **③ 超参网格（Supp Table 3 后半段）证明我们的参数没问题**：论文对 `batch_hidden ∈ {16,32,64}`、`n_latent ∈ {5,10,20}` 做了完整网格——**16/32/64 几乎无差（overall 波动 <0.02）、`n_latent` 10 和 20 都好、5 系统性偏低约 0.03**（Zheng 网格 overall：5≈0.78 < 10≈0.81 ≈ 20≈0.81）。这直接背书：我们 `n_latent=10` 的选择站得住；`batch_hidden_dim=10` 虽**略低于论文网格下界 16**，但该维度 16/32/64 近乎无差、外推到 10 风险很低。我们消融"n_latent=2 差、10/50 好"也与论文"5 偏低、10/20 好"同向。
 
-**结论（回答"要不要按 study 重训"）**：**不必要。** 论文自己的数字表明 Zheng benchmark 的结论**在 sample 与 study 两个 batch 层级下相同**；我们的 `patient(≈sample_name)` 复现已捕获该结论，且参数已被论文网格验证。改用 `study_name` 需重训 scAtlasVAE(监督+无监督)+scVI+重跑评测（≈把 Task 1 整条重做）、还需从 Zenodo 取 study 标签——投入产出比低、结论不会变。
+**结论（回答"要不要按 study 重训"）**：当前文件里没有 `study_name`，所以**不是选择不重训，而是现有数据无法做精确的 study 级复现**。我们的 `patient` 设置可回答样本/患者批次整合，设计 P 可回答整位患者留出；它们足以支撑当前范围内的相对比较，但不能替代论文 28-study 设置。若未来取得带可靠 `study_name` 的成品对象，应把它作为一项新的、独立实验完整重训，而不是把 `cancerType` 改名顶替。
 
 ---
 
@@ -287,7 +287,7 @@ df = bm.get_results(min_max_scale=False)   # 拿到指标表
 - [x] 数据通过 §3.2 验货（整数 count、总计数 > 0、batch/label 列已确定）
 - [x] `X_scAtlasVAE`、`X_scVI`、`X_pca` 三个嵌入都已存入 `obsm`
 - [x] 整合前后 UMAP 出图；`scib-metrics` 指标表出炉
-- [x] **相对排序符合论文趋势**：监督 scAtlasVAE 两项(批次校正+生物保留)皆最高、复现"监督胜出"；VAE 相对 PCA 的优势在批次校正一列（总分 0.435/0.416/0.404/0.400，PCR 基线已修，详见 §7）
+- [x] **相对排序符合论文趋势**：监督 scAtlasVAE 两项(批次校正+生物保留)皆最高、复现"监督胜出"；VAE 相对 PCA 的优势在批次校正一列（总分 0.444/0.416/0.411/0.400，PCR 与训练损失均已修，详见 §7）
 
 ---
 

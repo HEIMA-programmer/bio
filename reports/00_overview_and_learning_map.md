@@ -145,7 +145,7 @@ flowchart LR
 | 阶段 | 做什么 | 你会学到 | 首次遇到的包 | 产出物 | 对应论文 |
 |---|---|---|---|---|---|
 | **1 环境搭建** | 在 4060 上搭训练环境，顺带学"怎么摸清一个陌生库" | GPU 算力↔CUDA↔PyTorch 版本的关系；依赖管理；侦查陌生库的通用手法 | `conda` `pip` `pytorch` | 可跑通的环境 + 冒烟测试 | — |
-| **2 端到端跑通** | 用真实数据 TCellLandscape 走完"预处理→整合→评测" | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `scvi-tools`(baseline) `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 |
+| **2 端到端跑通** | 用 GSE156728 重建的 104,805-cell Zheng CD8 对象走完“预处理→整合→评测”（不是带 28 个 `study_name` 的成品 TCellLandscape） | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `scvi-tools`(baseline) `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 的方向性对应 |
 | **3 核心 VAE 从零重写** ★ | 带你逐行读 `_gex_model.py`，再对着它手写最小版 | VAE 全套；ZINB；KL 预热；**把论文公式/源码翻译成代码** | `torch.nn` `torch.distributions` | 手写模型 + "我的实现 vs 原实现"差异清单 | Fig 1b, Methods |
 | **4 消融实验** | 改一个设计旋钮，看结论怎么变 | 控制变量法；从"我复现了"到"我验证了作者为什么这么设计" | （复用上面） | 消融结果图/表 + 结论 | Ext. Data Fig 4 |
 | **5 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 复现论文招牌能力、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
@@ -176,18 +176,18 @@ flowchart TB
     PA -->|"方法先证明可信，才有资格生成生物学"| PB
 ```
 
-*图 0-4 — 论文骨架：Part A 用"三任务 + 稳健性"把方法钉死，Part B 才用它做生物学。**我们复现 Part A（方法侧），Part B 只读懂、定性讨论**（它需要全量受控数据、且是描述性生物学，非方法验证）。*
+*图 0-4 — 论文骨架：Part A 用“三任务 + 稳健性”验证方法，Part B 才做生物学。我们为 Part A 三项任务建立了对应实验，但受 study 字段与指标实现限制，不把它称为三项 exact reproduction；Part B 只读懂、定性讨论。*
 
 **Part A 每个实验 ↔ 我们在哪做**（这张表是全篇的"定位器"，随时回来对）：
 
 | 论文实验 | 论文图 | 我们在哪做 | 状态 |
 |---|---|---|---|
 | 方法内部机制（编码器/解码器/ZINB/KL/分类头） | Fig 1b + Methods | 阶段 1 摸库 + **阶段 3 手写重写** | ✅ 超出论文（L2 从零手写）|
-| **Task 1** 单图谱整合（有/无监督） | Ext.Fig 1e, 2a–f | 阶段 2（PCA/scVI/无监督/监督 四方对比） | ✅ |
-| **Task 2** 跨图谱整合 + 标签对齐 | Ext.Fig 1f, 3 | 阶段 5（Zheng + Yost 双图谱、多分类头） | ✅ 补上 |
-| **Task 3** 注释迁移（zero/full-shot） | Ext.Fig 1g, 2g,h | 阶段 5（设计 A/B + kNN 对照） | ✅ |
+| **Task 1** 单图谱整合（有/无监督） | Ext.Fig 1e, 2a–f | 阶段 2（PCA/scVI/无监督/监督 四方对比） | patient-level 对应实验，不是 study-level exact |
+| **Task 2** 跨图谱整合 + 标签对齐 | Ext.Fig 1f, 3 | 阶段 5（Zheng + Yost 双图谱、多分类头） | 对应实验；真实 head 共现与 latent/PCA 诊断分开 |
+| **Task 3** 注释迁移（zero/full-shot） | Ext.Fig 1g, 2g,h | 阶段 5（A=随机5%、B=整癌种、P=整患者；fair reference-only kNN；P paper-vs-fulltime 150/150） | A 可直接按留出单位对照；B/P 与 P 日程敏感性为扩展 |
 | 超参 / 潜维度稳健性 | Ext.Fig 4d | 阶段 4 消融 | ✅ |
-| 可扩展性（时间/内存近线性） | Ext.Fig 4e,f | 阶段 5（4060 计时曲线） | ✅ 补上 |
+| 可扩展性（时间/内存） | Ext.Fig 4e,f | 阶段 5（fresh-worker 时间、RSS/private、CUDA 两口径） | 趋势对应；内存定义不逐点对齐 |
 | 批不变编码器（机制实证） | Methods（F(X)） | 阶段 5 打乱-batch 探针 | ✅ 原创扩展 |
 | Part B 生物学（18 亚型 / Tex 三分 / TCR） | Fig 1–5 | — | 只读懂、定性讨论（正当超范围）|
 
@@ -209,10 +209,10 @@ flowchart TB
 
 > **为什么以 L2 为底线**：把 115 万细胞跑通、却说不清模型为什么这么设计，学习价值很低（那只是 L0/L1）。真正长本事的是 **L2——亲手把核心 VAE 从零重写一遍**。所以本项目**以 L2 为必达底线**，配 1–2 个 L3 消融。
 
-**判定"复现成功"的正确标准——看结论和趋势，不看像素级/数字级重合。**
+**判定是否得到复现支持——看预先定义的定量指标、基线和实验边界，既不要求像素级重合，也不能只凭笼统趋势。**
 
-- 成功长这样：批次被校正、细胞类型分得开、Tex 分出三个亚型、整合指标量级接近论文、方法间相对排序符合论文。
-- 你的 UMAP **几乎一定**和论文不完全一样——软件版本、随机种子、GPU 浮点运算顺序都会让图有差异。这在真实科学复现里**本就正常**。报告里诚实写清"做了什么、没做什么、为什么"，远比追求数字对齐重要（这正是 Pineau/NeurIPS 复现计划反复强调的）。
+- 本项目实际能检验的是：在 `patient` batch 与当前 `scib-metrics` 口径下的批次校正/生物保留、方法内部相对排序、手写模型与官方模型的定量重合，以及明确的留出和消融结果。它**没有**重新完成论文 Tex 三亚型的生物学发现，也不能用“指标量级接近”替代同口径比较。
+- UMAP **几乎一定**和论文不完全一样——软件版本、随机种子、GPU 浮点运算顺序都会让图有差异；反过来，UMAP 看起来相似也不是成功证明。报告要同时写清“做了什么、没做什么、为什么”，并以数值评测和基线为主。
 
 > **心态**：研究者往往打磨一篇论文数月甚至数年，**你一开始读不懂、复现不出来，完全正常**。复现是一项耐心的工程技能，靠"分解 → 逐块实现 → 逐块验证"，不是一口气看懂全部。
 
@@ -265,7 +265,7 @@ flowchart TB
 **本项目直接相关**
 - 论文：https://doi.org/10.1038/s41592-024-02530-0
 - 代码：https://github.com/WanluLiuLab/scAtlasVAE ｜ 文档：https://scatlasvae.readthedocs.io/en/latest/
-- 主力数据 TCellLandscape（GEO GSE156728）：https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156728
+- 主力数据来源：GEO GSE156728（本项目据此重建 104,805-cell Zheng CD8 对象；不是带 28 个 `study_name` 的论文成品 TCellLandscape）：https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156728
 
 **工具官方文档**
 - PyTorch：https://pytorch.org/docs/stable/ ｜ scanpy：https://scanpy.readthedocs.io/ ｜ anndata：https://anndata.readthedocs.io/

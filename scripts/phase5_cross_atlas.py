@@ -12,16 +12,28 @@
           label=[ct_zheng, ct_yost]（两个分类头，各只在本图谱有标签的细胞上训练；
           另一图谱的细胞该列置 'undefined'）。训练后：
       (1) 跨图谱整合质量：两图谱在潜空间是否混合（atlas silhouette，越低越混）。
-      (2) 标签对齐：在共享潜空间里，每个 Yost CD8 亚型的最近邻 Zheng 细胞多属于哪个 Zheng 亚型，
-          得到 Yost×Zheng 对齐矩阵（预期 CD8_ex↔Tex.*、CD8_mem↔Tm.* 等）。
-      与 PCA 基线对比，说明"整合+对齐"确实来自模型而非平凡最近邻。
+      (2) 论文式标签对齐：主分类头和附加分类头在同一次推理中预测所有细胞，统计两套预测标签的
+          共现比例，得到 Yost×Zheng 对齐矩阵（预期 CD8_ex↔Tex.*、CD8_mem↔Tm.* 等）。
+      (3) latent-kNN 标签对应：保留原最近邻分析作为共享潜空间的附加诊断，并与 PCA 比较；
+          它不再冒充论文的多分类头标签对齐。
 
 用法（环境 A `scatlasvae`）
     python phase5_cross_atlas.py                 # 默认全量 Zheng + Yost CD8
     python phase5_cross_atlas.py --zheng-n 40000 # 想更快就下采样 Zheng
 产出
     phase5_cross_atlas_mixing.csv     ：各嵌入的 atlas 混合度（silhouette）
-    phase5_cross_atlas_alignment.csv  ：Yost 亚型 × Zheng 亚型 的对齐矩阵（行归一化占比）
+    phase5_cross_atlas_head_alignment.csv
+                                      ：论文式多分类头预测共现矩阵（行归一化占比）
+    phase5_cross_atlas_head_alignment_counts.csv
+                                      ：多分类头预测的原始共现计数
+    phase5_cross_atlas_head_alignment_links.csv
+                                      ：行占比至少 10% 的标签对应边
+    phase5_cross_atlas_head_predictions.csv.gz
+                                      ：同一次前向产生的逐细胞双头预测
+    phase5_cross_atlas_latent_knn_alignment.csv
+                                      ：原 latent-kNN 标签对应矩阵（仅附加诊断）
+    phase5_cross_atlas_latent_knn_alignment_pca.csv
+                                      ：同一 latent-kNN 诊断的未校正 PCA 对照
     phase5_cross_atlas.npz            ：X_cross / X_pca_cross / atlas / 两套标签（供画 UMAP）
 对应报告
     reports/phase5_deeper_validation.md（Task 2 一节）。
@@ -104,8 +116,12 @@ def load_zheng(zheng_n):
     return ad.copy()
 
 
-def alignment_matrix(Z, atlas, ct_zheng, ct_yost, k=30):
-    """在共享潜空间里，用 Yost 细胞的 kNN（限定在 Zheng 细胞中）投出 Yost×Zheng 对齐矩阵。"""
+def latent_knn_alignment_matrix(Z, atlas, ct_zheng, ct_yost, k=30):
+    """附加诊断：在共享潜空间用 Yost→Zheng kNN 投出标签对应矩阵。
+
+    这项分析衡量 latent 邻域中的生物标签对应，不是论文 Task 2 的多分类头
+    标签对齐；后者由 :func:`classifier_head_alignment` 实现。
+    """
     zmask = atlas == "Zheng"; ymask = atlas == "Yost"
     nn = NearestNeighbors(n_neighbors=k).fit(Z[zmask])
     _, idx = nn.kneighbors(Z[ymask])
@@ -119,6 +135,111 @@ def alignment_matrix(Z, atlas, ct_zheng, ct_yost, k=30):
             M.loc[yt, zt] += 1
     M = M.div(M.sum(1), axis=0)                        # 行归一化=每个 Yost 亚型的 Zheng 邻居分布
     return M
+
+
+def _to_numpy(x):
+    """把 torch.Tensor/array-like 安全转成 NumPy，不保留计算图。"""
+    if hasattr(x, "detach"):
+        x = x.detach()
+    if hasattr(x, "cpu"):
+        x = x.cpu()
+    return np.asarray(x)
+
+
+def predict_all_label_heads_once(model):
+    """只前向一次，返回与 ``model.adata.obs`` 对齐的所有分类头 logits。
+
+    scAtlasVAE 1.0.6a3 的 ``predict_labels(return_pandas=False)`` 返回
+    ``(main_logits, additional_predictions)``。其中 ``main_logits`` 已恢复为
+    AnnData 原顺序，但 ``additional_predictions`` 仍是
+    ``list[minibatch][additional_head]``，需要逐头拼接并用
+    ``model._shuffle_indices`` 恢复顺序。不能再调用一次 ``predict_labels``，
+    因为每次调用都会重新采样随机 latent ``z``。
+    """
+    result = model.predict_labels(return_pandas=False, show_progress=True)
+    if not (isinstance(result, tuple) and len(result) == 2):
+        raise RuntimeError(
+            "当前模型没有返回 (main_logits, additional_predictions)；"
+            "请确认训练时 label_key 至少包含两个标签列。"
+        )
+
+    main_logits, additional_raw = result
+    main_logits = _to_numpy(main_logits)
+    n_cells = model.adata.n_obs
+    n_heads = len(model.n_additional_label or [])
+    if n_heads == 0:
+        raise RuntimeError("没有 additional classifier head，无法执行 Task 2 标签对齐。")
+
+    # 当前官方源码：list[minibatch][head]，尚未拼接/恢复 AnnData 顺序。
+    if len(additional_raw) and isinstance(additional_raw[0], (list, tuple)):
+        inverse_shuffle = np.asarray(model._shuffle_indices)
+        additional_logits = [
+            np.vstack([_to_numpy(batch[head]) for batch in additional_raw])[inverse_shuffle]
+            for head in range(n_heads)
+        ]
+    # 兼容未来可能直接返回 list[head] 的实现；这种结构应已与 main 一样恢复顺序。
+    elif len(additional_raw) == n_heads:
+        additional_logits = [_to_numpy(x) for x in additional_raw]
+    else:
+        raise RuntimeError("无法识别 predict_labels 返回的 additional_predictions 结构。")
+
+    if main_logits.shape[0] != n_cells or any(x.shape[0] != n_cells for x in additional_logits):
+        raise RuntimeError("分类头 logits 行数与 AnnData 细胞数不一致。")
+    return main_logits, additional_logits
+
+
+def classifier_head_alignment(model, threshold=0.10):
+    """按论文 Task 2，用两个分类头对所有细胞的预测共现对齐标签体系。
+
+    返回原始共现计数、按 Yost 预测标签行归一化的 P(Zheng|Yost)、达到
+    ``threshold`` 的对应边，以及每个细胞的两头预测。当前实验只有一个
+    additional head（Yost）。
+    """
+    main_logits, additional_logits = predict_all_label_heads_once(model)
+    if len(additional_logits) != 1:
+        raise RuntimeError(
+            f"本脚本预期恰好一个 additional head，实际得到 {len(additional_logits)} 个。"
+        )
+
+    undefined = str(getattr(model, "unlabel_key", UNDEF))
+    zheng_types = [str(x) for x in model.label_category.categories if str(x) != undefined]
+    yost_types = [str(x) for x in model.additional_label_category[0].categories if str(x) != undefined]
+    yost_logits = additional_logits[0]
+    if main_logits.shape[1] != len(zheng_types):
+        raise RuntimeError(
+            f"主头 logits 有 {main_logits.shape[1]} 列，但有效 Zheng 标签有 {len(zheng_types)} 个。"
+        )
+    if yost_logits.shape[1] != len(yost_types):
+        raise RuntimeError(
+            f"附加头 logits 有 {yost_logits.shape[1]} 列，但有效 Yost 标签有 {len(yost_types)} 个。"
+        )
+
+    pred_zheng = np.asarray(zheng_types, dtype=object)[main_logits.argmax(axis=1)]
+    pred_yost = np.asarray(yost_types, dtype=object)[yost_logits.argmax(axis=1)]
+    counts = pd.crosstab(
+        pd.Categorical(pred_yost, categories=yost_types),
+        pd.Categorical(pred_zheng, categories=zheng_types),
+        dropna=False,
+    )
+    counts.index.name = "predicted_yost_label"
+    counts.columns.name = "predicted_zheng_label"
+    row_fraction = counts.div(counts.sum(axis=1).replace(0, np.nan), axis=0).fillna(0.0)
+
+    links = row_fraction.stack().rename("p_zheng_given_yost").reset_index()
+    links["cooccurrence_count"] = [
+        int(counts.loc[y, z])
+        for y, z in zip(links["predicted_yost_label"], links["predicted_zheng_label"])
+    ]
+    links = links[links["p_zheng_given_yost"] >= threshold].copy()
+    links["threshold"] = threshold
+    links = links.sort_values(
+        ["predicted_yost_label", "p_zheng_given_yost"], ascending=[True, False]
+    )
+    predictions = pd.DataFrame(
+        {"predicted_zheng_label": pred_zheng, "predicted_yost_label": pred_yost},
+        index=model.adata.obs_names,
+    )
+    return counts, row_fraction, links, predictions
 
 
 def main():
@@ -213,18 +334,45 @@ def main():
               f"Yost 30-NN 中 Zheng={frac_zheng:.3f}（理想≈{ideal:.2f}）")
     pd.DataFrame(rows).to_csv(f"phase5_cross_atlas_mixing{tag}.csv", index=False)
 
-    # (2) 标签对齐矩阵（scAtlasVAE 潜空间）
-    M = alignment_matrix(merged.obsm["X_cross"], atlas, ctz, cty, k=30)
-    M.to_csv(f"phase5_cross_atlas_alignment{tag}.csv")
-    print("\nYost×Zheng 对齐矩阵（每个 Yost 亚型的最近邻 Zheng 亚型 top3）：")
-    for yt in M.index:
-        top = M.loc[yt].sort_values(ascending=False).head(3)
+    # (2) 论文 Task 2：两个分类头在同一次随机 z 前向中预测所有细胞，再统计标签共现。
+    # 不可分别调用 predict_labels 获取两头结果，否则会使用两次不同的随机 latent。
+    head_counts, head_alignment, head_links, head_predictions = classifier_head_alignment(
+        m, threshold=0.10
+    )
+    head_counts.to_csv(f"phase5_cross_atlas_head_alignment_counts{tag}.csv")
+    head_alignment.to_csv(f"phase5_cross_atlas_head_alignment{tag}.csv")
+    head_links.to_csv(f"phase5_cross_atlas_head_alignment_links{tag}.csv", index=False)
+    head_predictions.to_csv(f"phase5_cross_atlas_head_predictions{tag}.csv.gz", compression="gzip")
+    print("\n论文式多分类头 Yost×Zheng 对齐（P(Zheng头标签 | Yost头标签) top3）：")
+    for yt in head_alignment.index:
+        top = head_alignment.loc[yt].sort_values(ascending=False).head(3)
+        print(f"  {yt:12s} -> " + ", ".join(f"{z}({p:.2f})" for z, p in top.items()))
+
+    # (3) 原 latent-kNN 分析保留为附加诊断，并用明确文件名避免冒充多头标签对齐。
+    knn_alignment = latent_knn_alignment_matrix(
+        merged.obsm["X_cross"], atlas, ctz, cty, k=30
+    )
+    knn_alignment.to_csv(f"phase5_cross_atlas_latent_knn_alignment{tag}.csv")
+    pca_knn_alignment = latent_knn_alignment_matrix(
+        merged.obsm["X_pca_cross"], atlas, ctz, cty, k=30
+    )
+    pca_knn_alignment.to_csv(
+        f"phase5_cross_atlas_latent_knn_alignment_pca{tag}.csv"
+    )
+    print("\n附加诊断：latent-kNN Yost真值×Zheng真值标签对应 top3：")
+    for yt in knn_alignment.index:
+        top = knn_alignment.loc[yt].sort_values(ascending=False).head(3)
         print(f"  {yt:12s} -> " + ", ".join(f"{z}({p:.2f})" for z, p in top.items()))
 
     np.savez(f"phase5_cross_atlas{tag}.npz",
              X_cross=merged.obsm["X_cross"], X_pca_cross=merged.obsm["X_pca_cross"],
              atlas=atlas, ct_zheng=ctz, ct_yost=cty)
-    print(f"\n完成：phase5_cross_atlas_mixing{tag}.csv / _alignment{tag}.csv / {tag}.npz")
+    print(
+        f"\n完成：phase5_cross_atlas_mixing{tag}.csv / "
+        f"_head_alignment{tag}.csv / _latent_knn_alignment{tag}.csv / "
+        f"_latent_knn_alignment_pca{tag}.csv / "
+        f"phase5_cross_atlas{tag}.npz"
+    )
 
 
 if __name__ == "__main__":

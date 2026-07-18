@@ -1,5 +1,7 @@
-design,kind,accuracy,macro_f1,macro_ovr_auc
-A,transductive(full-data scVI),0.6406,0.5103,0.9053
-A,fair-inductive(ref-only+project(no surgery)),0.6422,0.5113,0.8977
-B,transductive(full-data scVI),0.5308,0.3771,0.8133
-B,fair-inductive(ref-only+scArches surgery),0.5269,0.3732,0.8096
+design,query_unit,kind,accuracy,macro_f1,macro_ovr_auc
+A,random 5% cells,transductive(full-data scVI),0.6406,0.5103,0.9053
+A,random 5% cells,fair-inductive(reference-encoder-direct(no-query-training)),0.6366,0.5105,0.9042
+B,cancer:UCEC,transductive(full-data scVI),0.5308,0.3771,0.8133
+B,cancer:UCEC,fair-inductive(reference-encoder-direct(no-query-training)),0.5341,0.3808,0.8124
+P,patient:RC.P20190923,transductive(full-data scVI),0.587,0.2895,0.7839
+P,patient:RC.P20190923,fair-inductive(reference-encoder-direct(no-query-training)),0.5743,0.2753,0.7654

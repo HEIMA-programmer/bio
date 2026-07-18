@@ -1,0 +1,334 @@
+{
+  "status": "PASS",
+  "complete": true,
+  "allow_missing": false,
+  "generated_at_utc": "2026-07-18T05:25:06.372641+00:00",
+  "data_dir": ".",
+  "cross_log_dir": "remaining_pipeline_logs",
+  "summary": {
+    "pass": 17,
+    "fail": 0,
+    "skip": 0
+  },
+  "checks": [
+    {
+      "name": "transfer.paper.AB",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "csv": "phase5_transfer_results_paper.csv",
+        "npz": "phase5_transfer_cm_paper.npz",
+        "rows": 5,
+        "designs": [
+          "A",
+          "B"
+        ],
+        "n_query": {
+          "A": 5240,
+          "B": 19926
+        },
+        "max_accuracy_abs_error": 0.0,
+        "max_macro_f1_abs_error": 1.1102230246251565e-16
+      }
+    },
+    {
+      "name": "transfer.paper.P",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "csv": "phase5_transfer_results_patient_paper.csv",
+        "npz": "phase5_transfer_cm_patient_paper.npz",
+        "rows": 2,
+        "designs": [
+          "P"
+        ],
+        "n_query": {
+          "P": 5809
+        },
+        "max_accuracy_abs_error": 5.551115123125783e-17,
+        "max_macro_f1_abs_error": 5.551115123125783e-17
+      }
+    },
+    {
+      "name": "transfer.fulltime.AB",
+      "status": "PASS",
+      "message": "validated",
+      "required": false,
+      "details": {
+        "csv": "phase5_transfer_results.csv",
+        "npz": "phase5_transfer_cm.npz",
+        "rows": 5,
+        "designs": [
+          "A",
+          "B"
+        ],
+        "n_query": {
+          "A": 5240,
+          "B": 19926
+        },
+        "max_accuracy_abs_error": 0.0,
+        "max_macro_f1_abs_error": 5.551115123125783e-17
+      }
+    },
+    {
+      "name": "transfer.fulltime.P",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "artifacts": {
+          "csv": "phase5_transfer_results_patient_fulltime.csv",
+          "npz": "phase5_transfer_cm_patient_fulltime.npz",
+          "rows": 2,
+          "designs": [
+            "P"
+          ],
+          "n_query": {
+            "P": 5809
+          },
+          "max_accuracy_abs_error": 0.0,
+          "max_macro_f1_abs_error": 5.551115123125783e-17
+        },
+        "provenance": {
+          "status": "complete",
+          "schedule": "max_epoch=150,pred_last_n_epoch=150",
+          "completed_epoch": 150,
+          "checkpoint_mb": 8.149409294128418,
+          "forbidden_log_hits": []
+        }
+      }
+    },
+    {
+      "name": "transfer.patient_selection",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "patient": "RC.P20190923",
+        "n_cells": 5809,
+        "n_labels": 17
+      }
+    },
+    {
+      "name": "fair_knn.ABP_two_modes",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "rows": 6,
+        "designs": [
+          "A",
+          "B",
+          "P"
+        ],
+        "modes_per_design": 2
+      }
+    },
+    {
+      "name": "cross_atlas.full.outputs",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "variant": "full",
+        "n_cells": 117169,
+        "latent_shape": [
+          117169,
+          10
+        ],
+        "pca_shape": [
+          117169,
+          50
+        ],
+        "atlas_counts": {
+          "Zheng": 104805,
+          "Yost": 12364
+        },
+        "head_matrix_shape": [
+          5,
+          17
+        ],
+        "head_links": 19,
+        "alignment_max_abs_error": 9.75781955236954e-17
+      }
+    },
+    {
+      "name": "cross_atlas.pl10.outputs",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "variant": "pl10",
+        "n_cells": 117169,
+        "latent_shape": [
+          117169,
+          10
+        ],
+        "pca_shape": [
+          117169,
+          50
+        ],
+        "atlas_counts": {
+          "Zheng": 104805,
+          "Yost": 12364
+        },
+        "head_matrix_shape": [
+          5,
+          17
+        ],
+        "head_links": 21,
+        "alignment_max_abs_error": 9.974659986866641e-17
+      }
+    },
+    {
+      "name": "cross_atlas.shared_inputs",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "n_cells": 117169,
+        "pca_inputs_match": true
+      }
+    },
+    {
+      "name": "cross_atlas.full.logs_no_nan",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "variant": "full",
+        "files": [
+          "cross_atlas_full_classifier_guarded.stdout.log",
+          "cross_atlas_full_classifier_guarded.stderr.log"
+        ],
+        "bytes_scanned": 24259666,
+        "forbidden_hits": 0
+      }
+    },
+    {
+      "name": "cross_atlas.pl10.logs_no_nan",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "variant": "pl10",
+        "files": [
+          "cross_atlas_last10_classifier_guarded.stdout.log",
+          "cross_atlas_last10_classifier_guarded.stderr.log"
+        ],
+        "bytes_scanned": 24257758,
+        "forbidden_hits": 0
+      }
+    },
+    {
+      "name": "invariance.metrics",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "scatlas_rows": 1,
+        "scvi_rows": 2,
+        "scatlas_max_drift": 0.0
+      }
+    },
+    {
+      "name": "invariance.latents",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "keys": [
+          "scAtlasVAE_real",
+          "scAtlasVAE_perm",
+          "scVI_real",
+          "scVI_perm",
+          "scVI_default_real",
+          "scVI_default_perm",
+          "scVI_enccov_real",
+          "scVI_enccov_perm"
+        ],
+        "scatlas_stored_max_abs_drift": 0.0
+      }
+    },
+    {
+      "name": "phase4.ablation_metrics",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "embedding_rows": [
+          "X_nlat10",
+          "X_nlat2",
+          "X_nlat50",
+          "X_nowarmup"
+        ],
+        "metric_columns": 13
+      }
+    },
+    {
+      "name": "scalability.complete_memory_schema",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "rows": 4,
+        "n_cells": [
+          10002,
+          29999,
+          60005,
+          100006
+        ],
+        "numeric_columns_checked": 24,
+        "process_memory_backends": [
+          "windows-ctypes"
+        ],
+        "peak_rss_mb_range": [
+          1569.15234375,
+          2253.9296875
+        ],
+        "peak_private_mb_range": [
+          2263.5234375,
+          2959.7734375
+        ],
+        "peak_cuda_allocated_mb_range": [
+          109.716796875,
+          110.5888671875
+        ],
+        "peak_cuda_reserved_mb_range": [
+          124.0,
+          144.0
+        ],
+        "all_numeric_values_finite": true
+      }
+    },
+    {
+      "name": "phase3.knn_overlap.optional",
+      "status": "PASS",
+      "message": "validated",
+      "required": false,
+      "details": {
+        "rows": 1,
+        "mean_knn_jaccard": [
+          0.2036948935309218
+        ]
+      }
+    },
+    {
+      "name": "phase3.minimal_benchmark.optional",
+      "status": "PASS",
+      "message": "validated",
+      "required": false,
+      "details": {
+        "embedding_rows": [
+          "X_minimal",
+          "X_pca",
+          "X_scAtlasVAE_sup",
+          "X_scVI"
+        ],
+        "metric_columns": 13
+      }
+    }
+  ]
+}

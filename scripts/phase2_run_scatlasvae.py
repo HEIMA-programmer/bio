@@ -16,6 +16,8 @@
 """
 import argparse
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import scanpy as sc
 import scatlasvae
 
