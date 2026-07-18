@@ -6,7 +6,7 @@
 
 如需**实验结果图**（UMAP/条形/曲线/混淆矩阵/探针），请用 build_real.py（输出 PNG 到 reports/figures/）。
 
-运行：python3 build_structures.py [fig_name ...]   # 不带参数=全部
+如确需考古：python build_structures.py --allow-deprecated [fig_name ...]
 每个 fig_* 函数画一张图，风格统一取自 theme.py。
 """
 import sys
@@ -164,12 +164,12 @@ def fig_paper_story():
 # ======================================================================
 def fig_batch_invariant_vs_scvi():
     fig, ax = T.canvas(1060, 500)
-    T.title(ax, 40, 26, "为什么只有 scAtlasVAE 能 zero-shot 迁移",
-            "关键差别只在一处：编码器看不看 batch")
+    T.title(ax, 40, 26, "编码器是否显式接收 batch 元数据",
+            "这是可配置的结构差异之一，不等同于完整的迁移能力")
     cols = ["方法", "编码器输入", "解码器", "重构"]
     rows = [
         ("scAtlasVAE", "F(X) 只吃 X", "F(z, B)", "ZINB", True),
-        ("scVI / scANVI", "F(X, B, S)", "F(z, zₗ, B)", "ZINB", False),
+        ("scVI / scANVI", "默认 F(X)；协变量可选", "F(z, zₗ, B)", "ZINB", False),
         ("SCALEX", "F(X)", "F(z, B)", "BCE", False),
         ("scPoli", "F(X, B)", "F(z, B)", "ZINB", False),
     ]
@@ -195,9 +195,9 @@ def fig_batch_invariant_vs_scvi():
     # 右侧结论
     panel(ax, 40, 372, 980, 96, fc=PAL["loss"]["face"], ec=PAL["loss"]["edge"])
     T.label(ax, 60, 400, "编码器不依赖 batch 的后果", color=PAL["loss"]["ink"], fs=12.5, ha="left", weight="bold")
-    T.label(ax, 60, 428, "新查询数据不必重训、不必改架构——直接过同一个编码器就映射进参考图谱（zero-shot）。",
+    T.label(ax, 60, 428, "不显式接收 batch 元数据时，固定编码器可直接处理采用同一基因空间的查询表达。",
             color=MUTED, fs=T.FS_ANN, ha="left")
-    T.label(ax, 60, 450, "而 scVI 编码器吃了 batch，来新批次就得做“架构手术”或重训。",
+    T.label(ax, 60, 450, "默认 scVI 也可不显式编码 batch；encode_covariates=True 时才把协变量送入编码器。",
             color=MUTED, fs=T.FS_ANN, ha="left")
     T.save(fig, "fig_batch_invariant_vs_scvi")
 
@@ -299,7 +299,7 @@ def fig_ablation_design():
     branches = [
         ("input",   "潜维度", ["n_latent → 2 / 50"], "预期：2 太小信息丢，50 无收益", 40),
         ("encoder", "KL 预热", ["关掉 / 缩短预热"], "预期：过早收紧→后验坍缩", 380),
-        ("decoder", "batch 位置", ["移到编码器"], "预期：退化成 scVI，迁移变差", 720),
+        ("decoder", "batch 位置", ["移到编码器"], "类比显式 encode_covariates=True 变体", 720),
     ]
     for k, t, subs, exp, x in branches:
         T.arrow(ax, 500, 168, x + 120, 232, rad=0.0)
@@ -352,7 +352,12 @@ REGISTRY = {
 }
 
 if __name__ == "__main__":
-    names = sys.argv[1:] or list(REGISTRY)
+    if "--allow-deprecated" not in sys.argv[1:]:
+        raise SystemExit(
+            "build_structures.py 已弃用；概念图现由 Markdown Mermaid 维护。"
+            "考古需显式传 --allow-deprecated。"
+        )
+    names = [arg for arg in sys.argv[1:] if arg != "--allow-deprecated"] or list(REGISTRY)
     for n in names:
         REGISTRY[n]()
         print("built", n)

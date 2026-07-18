@@ -229,8 +229,8 @@ phase1_smoke_test.py 结果：[x] 通过   [ ] 报错(贴下方)
 
 ## 7. 检查点与完成标准（DoD）
 
-- [ ] 步骤 5：`torch.cuda.is_available()` 为 `True`、算力 `(8,9)`、GPU 矩阵乘法不报 cuBLAS 错
-- [ ] 步骤 9：`import scatlasvae` 成功，合成数据能 `fit()` 并 `get_latent_embedding()` 得到 `(512, 10)` 的 latent
+- [x] 步骤 5：`torch.cuda.is_available()` 为 `True`、算力 `(8,9)`、GPU 矩阵乘法不报 cuBLAS 错
+- [x] 步骤 9：`import scatlasvae` 成功，合成数据能 `fit()` 并 `get_latent_embedding()` 得到 `(512, 10)` 的 latent
 
 ---
 

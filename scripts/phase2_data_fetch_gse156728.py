@@ -1,4 +1,4 @@
-"""阶段二 · 步骤 2（前置）：从 GEO 下载并组装 TCellLandscape（GSE156728）为原始计数 h5ad。
+"""阶段二 · 步骤 2（前置）：从 GEO 下载并组装 Zheng/GSE156728 10X CD8 原始计数 h5ad。
 
 用途
     phase2_data_download_and_qc.py 从一个已存在的 TCellLandscape_raw.h5ad 起步，
@@ -9,9 +9,9 @@
 规模（2026-07 更新：默认改为"全量"）
     经核对元数据，GSE156728 的 8 个 10X CD8 癌种共 ~104,805 细胞（THCA 33450 / UCEC 19926 /
     RC 16544 / ESCA 12526 / MM 8629 / PACA 5957 / BC 4291 / BCL 3482；45 个病人），
-    量级 ≈ 论文 TCellLandscape 的 110,218。此前默认下采样到 4 万只是为了快，
-    但我们其实有论文同规模的数据，故**默认改为不封顶、不下采样、取全量**，
-    使 benchmark 直接对标论文 TCellLandscape 的规模。仍保留 --target / --max-per-cancer
+    量级与论文 110,218-cell benchmark 接近。此前默认下采样到 4 万只是为了快，
+    故**默认改为不封顶、不下采样、取当前 8 癌种全量**。这只是同量级真实数据上的
+    近似复现，不是带 28 个 ``study_name`` 的论文成品 TCellLandscape。仍保留 --target / --max-per-cancer
     以便需要小规模先跑通时手动下采样。
 
 内存安全（关键）
@@ -37,7 +37,8 @@
     python phase2_data_fetch_gse156728.py --cancers BC ESCA THCA   # 只用部分癌种
 
 产出
-    TCellLandscape_raw.h5ad：X = 原始整数计数（CSR 稀疏），
+    TCellLandscape_raw.h5ad：X = 原始整数计数（CSR 稀疏）。文件名为历史兼容名，
+    内容实际是本脚本重建的 Zheng/GSE156728 8 癌种 10X CD8 对象，并非论文成品 TCellLandscape；
     obs 含 cancerType / patient / loc / cell_type / platform。
     随后交给 phase2_data_download_and_qc.py --stage check / preprocess。
 

@@ -85,11 +85,11 @@ def umap():
         sc.tl.umap(adata, neighbors_key=tag)
         adata.obsm[f"X_umap_{tag}"] = adata.obsm["X_umap"]
         sc.tl.leiden(adata, neighbors_key=tag, key_added=f"leiden_{tag}", resolution=1.0)
-        # 按 batch 和按 cell type 两种上色，直观看整合前后差别
-        sc.pl.embedding(adata, basis=f"X_umap_{tag}", color=[BATCH_KEY, LABEL_KEY],
-                        save=f"_{tag}.png", show=False)
+        # 不在这里调用 Scanpy 自动出图：45 位患者的默认图例会遮挡/裁切，而且两次调用
+        # 很难保证患者配色与绘制顺序一致。正式四联图统一由 figgen/build_real.py
+        # 读取这里缓存的两个 UMAP，并使用固定 45 色映射生成。
     adata.write_h5ad(PROC_PATH)
-    print("UMAP/Leiden 完成，图见 figures/ 目录")
+    print("UMAP/Leiden 已缓存；正式图请运行 scripts/figgen/build_real.py umap_integration")
 
 
 if __name__ == "__main__":

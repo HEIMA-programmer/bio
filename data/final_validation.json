@@ -2,15 +2,28 @@
   "status": "PASS",
   "complete": true,
   "allow_missing": false,
-  "generated_at_utc": "2026-07-18T05:25:06.372641+00:00",
+  "generated_at_utc": "2026-07-18T10:28:46.671643+00:00",
   "data_dir": ".",
   "cross_log_dir": "remaining_pipeline_logs",
   "summary": {
-    "pass": 17,
+    "pass": 20,
     "fail": 0,
     "skip": 0
   },
   "checks": [
+    {
+      "name": "scvi.checkpoint_state",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "state": "absent_by_design",
+        "limitation": "X_scVI is retained, but no matching training checkpoint is claimed",
+        "isolated_legacy_backups": [
+          "pre_fix_backup_scvi_model_39997_20260713"
+        ]
+      }
+    },
     {
       "name": "transfer.paper.AB",
       "status": "PASS",
@@ -230,7 +243,11 @@
       "details": {
         "scatlas_rows": 1,
         "scvi_rows": 2,
-        "scatlas_max_drift": 0.0
+        "patients_covered": 45,
+        "batch_changed_fraction": 1.0,
+        "probe_indices_sha256": "86587fa9db6fb4bc86d3e922df498830cc9e84cd19e5da665f199c20a88ce1d7",
+        "scatlas_max_drift": 0.0,
+        "scvi_encoded_mean_l2_drift": 0.2168117463588714
       }
     },
     {
@@ -242,14 +259,36 @@
         "keys": [
           "scAtlasVAE_real",
           "scAtlasVAE_perm",
-          "scVI_real",
-          "scVI_perm",
           "scVI_default_real",
           "scVI_default_perm",
           "scVI_enccov_real",
-          "scVI_enccov_perm"
+          "scVI_enccov_perm",
+          "scAtlasVAE_obs_indices",
+          "scAtlasVAE_batch_real",
+          "scAtlasVAE_batch_perm",
+          "scVI_default_obs_indices",
+          "scVI_default_batch_real",
+          "scVI_default_batch_perm",
+          "scVI_enccov_obs_indices",
+          "scVI_enccov_batch_real",
+          "scVI_enccov_batch_perm"
         ],
-        "scatlas_stored_max_abs_drift": 0.0
+        "drift": {
+          "scAtlasVAE": {
+            "max_abs": 0.0,
+            "mean_l2": 0.0
+          },
+          "scVI_default": {
+            "max_abs": 0.0,
+            "mean_l2": 0.0
+          },
+          "scVI_enccov": {
+            "max_abs": 0.46026790142059326,
+            "mean_l2": 0.21681174635887146
+          }
+        },
+        "n_probe": 8000,
+        "probe_indices_sha256": "86587fa9db6fb4bc86d3e922df498830cc9e84cd19e5da665f199c20a88ce1d7"
       }
     },
     {
@@ -328,6 +367,141 @@
           "X_scVI"
         ],
         "metric_columns": 13
+      }
+    },
+    {
+      "name": "phase3.structure_metrics",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "rows": 22,
+        "n_obs": 104805,
+        "n_labels": 17,
+        "centroid_distance_correlations": {
+          "latent_centroid_distance_pearson": 0.9031791010481096,
+          "latent_centroid_distance_spearman": 0.8945947235341825,
+          "umap_centroid_distance_pearson": 0.6333350395839636,
+          "umap_centroid_distance_spearman": 0.5696674776966747
+        },
+        "raw_label_asw": {
+          "X_scAtlasVAE_sup": 0.01078240000000008,
+          "X_minimal": 0.001563079999999939
+        },
+        "scanpy_n_neighbors_config": 15,
+        "stored_nonself_neighbors_per_cell": 14,
+        "scanpy_graph_label_purity": {
+          "X_scAtlasVAE_sup": 0.5331527258105189,
+          "X_minimal": 0.5262310276908817
+        },
+        "literal_15_nonself_label_purity": {
+          "X_scAtlasVAE_sup": 0.532307300860328,
+          "X_minimal": 0.5250188445207766
+        },
+        "same_label_random_baseline": 0.10643661962095392
+      }
+    },
+    {
+      "name": "figures.canonical_manifest",
+      "status": "PASS",
+      "message": "validated",
+      "required": true,
+      "details": {
+        "manifest": "C:\\Users\\yanbin\\Desktop\\Bio\\bio\\data\\figure_manifest.json",
+        "generator": "scripts\\figgen\\build_real.py",
+        "generator_sha256": "9bb5d76f66cea2880c339b211b1e05f0abaac5906b577f232513321263034638",
+        "n_sources": 13,
+        "n_figures": 11,
+        "figures": [
+          {
+            "target": "loss",
+            "path": "reports/figures/fig_phase2_loss_curve.png",
+            "width": 1207,
+            "height": 658,
+            "bytes": 102535,
+            "sha256": "33f03c1cb736355b2f4c95d1bd7ffe32c262af149edadd522691cea64935bf5b"
+          },
+          {
+            "target": "bench",
+            "path": "reports/figures/fig_phase2_benchmark_bars.png",
+            "width": 1190,
+            "height": 703,
+            "bytes": 77554,
+            "sha256": "7fdc6f6c49aa90125ecb679d919301901e1a8e04b0ff345626be121f72749189"
+          },
+          {
+            "target": "ablation",
+            "path": "reports/figures/fig_phase4_ablation_bars.png",
+            "width": 1716,
+            "height": 717,
+            "bytes": 72685,
+            "sha256": "34954439c68ca35781efd79b8709dcb96f1352871fdc79884e91116598900cdf"
+          },
+          {
+            "target": "umap_integration",
+            "path": "reports/figures/fig_phase2_integration_umap.png",
+            "width": 1670,
+            "height": 1400,
+            "bytes": 2149172,
+            "sha256": "ceecb12814effc1ef4aa2e0246255e4e5b1e5de2dd9a709ce40abb742ad587ad"
+          },
+          {
+            "target": "umap_compare",
+            "path": "reports/figures/fig_phase3_umap_compare.png",
+            "width": 1792,
+            "height": 763,
+            "bytes": 1360320,
+            "sha256": "b43cf706d1c212bcbdf58deb6f63328ddbabab37a5e89ec62781ebaf5b2a5e58"
+          },
+          {
+            "target": "bench_minimal",
+            "path": "reports/figures/fig_phase5_minimal_bench.png",
+            "width": 1156,
+            "height": 703,
+            "bytes": 73298,
+            "sha256": "c8d94613ff6e770919bfdc5700c2e7497095c0501ccef36c4fc75a0be172c304"
+          },
+          {
+            "target": "transfer",
+            "path": "reports/figures/fig_phase5_transfer.png",
+            "width": 2511,
+            "height": 731,
+            "bytes": 87953,
+            "sha256": "c3ae4bb515858fb65dfa86e1b48bcb49b06f8422a9f927fd025b70e294710bcb"
+          },
+          {
+            "target": "transfer_protocol_p",
+            "path": "reports/figures/fig_phase5_transfer_patient_protocol.png",
+            "width": 1109,
+            "height": 721,
+            "bytes": 73650,
+            "sha256": "58c73c6297e5cf91c577cf0fe1ca1e92b5b84d15480525331e9316fa3e4b1d3c"
+          },
+          {
+            "target": "invariance",
+            "path": "reports/figures/fig_phase5_invariance.png",
+            "width": 1880,
+            "height": 714,
+            "bytes": 84964,
+            "sha256": "9455ecf33906dc59b207c83a73e197e79f1422eacad9a67865deabdc96c6364e"
+          },
+          {
+            "target": "scalability",
+            "path": "reports/figures/fig_phase5_scalability.png",
+            "width": 2270,
+            "height": 716,
+            "bytes": 140559,
+            "sha256": "65ec1de8731d643f3e1c2a29f23f8abeb8fec5dc76e4ebe98aaba3621c495409"
+          },
+          {
+            "target": "cross_atlas",
+            "path": "reports/figures/fig_phase5_cross_atlas.png",
+            "width": 1343,
+            "height": 947,
+            "bytes": 116496,
+            "sha256": "f21fdfba4fc2c2cbd74534c5983e34437e6fc9260b78bb76f94c8eab7f7661b4"
+          }
+        ]
       }
     }
   ]

@@ -11,14 +11,14 @@
       设计 B：留出一个整癌种（默认 UCEC），测试生物 OOD；它不是 batch/study 留出。
       设计 P：留出整位患者，作为当前字段下的样本/批次域类比；仍不是 leave-one-study。
 
-    **分类头训练协议（--protocol，2026-07 加）**：源码 `_gex_model.py:1430`
+    **分类头训练日程（--protocol，2026-07 加）**：源码 `_gex_model.py:1430`
     `if epoch > max_epoch - pred_last_n_epoch:` 才把分类头损失加进总损失。
-      - `paper`（默认，推荐）：`pred_last_n_epoch=10`、`max_epoch` 按 reference 大小自动计算，
-        分类头只训末 10 轮。训练日程与论文 Task 3 默认一致，但 B/P 的留出单位不同，不能与
-        论文 leave-one-study 数值直接对齐。
+      - `paper`（为兼容旧文件名保留的 CLI 名，实际指**官方源码默认**）：
+        `pred_last_n_epoch=10`、`max_epoch` 按论文公式自动计算，分类头只训末10轮。
+        论文 Methods 未明确披露 pred_last 参数；B/P 的留出单位也不能与 leave-one-study 对齐。
       - `fulltime`：`pred_last_n_epoch=max_epoch`、`max_epoch=150`，分类头**全程训练**。这是早期
         ~3.8 万小参考集时期的补丁（那时末 10 轮不够、zero-shot acc 仅 0.26）；全量 ~10 万后
-        论文默认已够（论文自己在 110k 上用默认拿到 0.905），此模式仅保留作对照。
+        源码默认已够（论文在约110k对象上报告0.905），此模式仅保留作对照。
 
     每种设计：
       - reference（其余细胞）上**监督训练**新模型（不能复用见过全量的 scatlasvae_tcell.pt）。
@@ -29,7 +29,7 @@
     指标：accuracy、macro-F1、macro one-vs-rest ROC-AUC（论文指标）+ 混淆矩阵。
 
 用法（环境 A `scatlasvae`；sklearn 由 scanpy 依赖自带）
-    python phase5_annotation_transfer.py                          # 论文协议、设计 A+B
+    python phase5_annotation_transfer.py                          # 源码默认日程、设计 A+B
     python phase5_annotation_transfer.py --protocol fulltime      # 旧全程训练（对照）
 产出（按协议分文件，互不覆盖）
     phase5_transfer_results[_paper].csv（每行 = 设计×方法 的 acc/F1/AUROC）
@@ -135,7 +135,7 @@ def train_reference(adata, ref_mask, ref_pt, max_epoch, pred_last):
         batch_embedding="embedding", batch_hidden_dim=10, device="cuda:0",
     )
     # 分类头训练调度：源码 fit `if epoch > max_epoch - pred_last_n_epoch` 才加分类损失。
-    #   paper 协议: pred_last=10、max_epoch 按 reference 大小自动计算 → 末 10 轮。
+    #   paper（旧CLI名）: 源码默认 pred_last=10，max_epoch 按论文公式自动计算 → 末10轮。
     #   fulltime  : pred_last=max_epoch → 全程（小参考集时期补丁，全量下非必需）。
     m.fit(max_epoch=max_epoch, pred_last_n_epoch=pred_last)
     m.save_to_disk(ref_pt)
@@ -241,7 +241,7 @@ def run_design(adata, design, protocol, fulltime_max_epoch, out_csv, out_npz, ro
     # 协议决定 max_epoch 与 pred_last_n_epoch
     if protocol == "paper":
         max_epoch = auto_max_epoch(n_ref)
-        pred_last = 10                         # 论文默认
+        pred_last = 10                         # 官方源码默认；论文Methods未明确披露
     else:  # fulltime
         max_epoch = fulltime_max_epoch         # 150
         pred_last = fulltime_max_epoch         # 全程
@@ -279,7 +279,7 @@ def main():
                     help="A=random 5%%; B=leave UCEC cancer (biological OOD); "
                          "P=leave one whole patient (batch-domain analogue)")
     ap.add_argument("--protocol", choices=["paper", "fulltime"], default="paper",
-                    help="paper=论文协议(pred_last_n_epoch=10、max_epoch自动，与论文benchmark同起跑线，推荐)；"
+                    help="paper=为兼容旧产物保留的名称，实际为源码默认(pred_last=10、max_epoch按论文公式自动)；"
                          "fulltime=分类头全程训练(旧小参考集补丁，仅作对照)")
     ap.add_argument("--max-epoch", type=int, default=150,
                     help="仅 fulltime 协议用：全程训练的 epoch 数（控 4060 时长；默认 150）")

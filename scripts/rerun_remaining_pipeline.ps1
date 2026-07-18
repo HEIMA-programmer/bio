@@ -1,5 +1,6 @@
 param(
     [string]$ScAtlasPython = "",
+    [string]$ScviPython = "",
     [string]$ScibPython = ""
 )
 
@@ -11,8 +12,9 @@ $LogDir = Join-Path $DataDir "remaining_pipeline_logs"
 $StatusPath = Join-Path $DataDir "remaining_pipeline_status.json"
 $DefaultEnvRoot = Join-Path $env:USERPROFILE "miniconda3\envs"
 if (-not $ScAtlasPython) { $ScAtlasPython = Join-Path $DefaultEnvRoot "scatlasvae\python.exe" }
+if (-not $ScviPython) { $ScviPython = Join-Path $DefaultEnvRoot "scvi\python.exe" }
 if (-not $ScibPython) { $ScibPython = Join-Path $DefaultEnvRoot "scib\python.exe" }
-foreach ($pythonPath in @($ScAtlasPython, $ScibPython)) {
+foreach ($pythonPath in @($ScAtlasPython, $ScviPython, $ScibPython)) {
     if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
         throw "Python executable not found: $pythonPath. Pass the corresponding *Python parameter explicitly."
     }
@@ -98,10 +100,21 @@ try {
         "..\scripts\phase5_scalability.py", "--sizes", "10000", "30000", "60000", "100000",
         "--epochs", "20", "--memory-sample-interval-ms", "50"
     )
+    Invoke-PipelineStep -Name "scatlasvae_invariance_probe" -PythonExe $ScAtlasPython -Arguments @(
+        "..\scripts\phase5_batch_invariance_probe.py", "--model", "scatlasvae"
+    )
+    Invoke-PipelineStep -Name "scvi_invariance_probe" -PythonExe $ScviPython -Arguments @(
+        "..\scripts\phase5_batch_invariance_probe.py", "--model", "scvi"
+    )
+    Invoke-PipelineStep -Name "phase3_structure_metrics" -PythonExe $ScibPython -Arguments @(
+        "..\scripts\phase3_structure_metrics.py"
+    )
     Invoke-PipelineStep -Name "regenerate_all_affected_figures" -PythonExe $ScibPython -Arguments @(
-        "scripts\figgen\build_real.py", "bench", "umap_integration", "transfer", "invariance",
-        "cross_atlas", "ablation", "scalability"
+        "scripts\figgen\build_real.py", "all"
     ) -WorkingDirectory $RepoRoot
+    Invoke-PipelineStep -Name "final_validation" -PythonExe $ScibPython -Arguments @(
+        "..\scripts\validate_corrected_outputs.py"
+    )
     Write-PipelineStatus -Status "complete" -Step "all" -Message "All remaining corrected reruns completed successfully."
     exit 0
 }

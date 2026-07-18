@@ -38,3 +38,5 @@ data/pre_fix_backup_*/
 data/pre_empty_head_guard_*/
 data/*_pipeline_status.json
 data/patient_fulltime_status.json
+# Poorly rendered auxiliary Scanpy PNGs are kept locally for recovery only.
+data/legacy_outputs_20260718/*.png

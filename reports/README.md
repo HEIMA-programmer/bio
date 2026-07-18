@@ -34,7 +34,9 @@
 | 5 | 深入验证与扩展：Task1四方 / Task3注释迁移 / Task2跨图谱对齐 / 批不变探针 / 可扩展性 / 手写VAE上标尺 / 指标对照 | [phase5_deeper_validation.md](phase5_deeper_validation.md) | `phase5_*.py` · 结果图 |
 | 6 | 复现汇总报告（组会稿，含深入验证摘要） | [phase6_final_report.md](phase6_final_report.md) | 引用全部图 |
 
-> **状态（2026-07 更新）**：阶段 1–6 均为本机真实运行；scAtlasVAE 训练使用 RTX 4060，reference-only scVI 与 scib-metrics 在各自环境中使用 CPU。主数据是 GSE156728 的 104,805-cell Zheng CD8 重建对象，与论文 benchmark 同量级但不是带 28 个 `study_name` 的成品 TCellLandscape；Task 2 另用 Yost 2019，Task 3 已补齐整 patient 设计 P 的 paper 末 10 轮与 full-time 150/150 轮日程敏感性。真实产物见 `../data/`，结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。
+> **状态（2026-07 更新）**：阶段 1–6 均为本机真实运行；scAtlasVAE 训练使用 RTX 4060，reference-only scVI 与 scib-metrics 在各自环境中使用 CPU。主数据是 GSE156728 的 104,805-cell Zheng CD8 重建对象，与论文 benchmark 同量级但不是带 28 个 `study_name` 的成品 TCellLandscape；Task 2 另用 Yost 2019。Task 3 的设计 A 同时做了 zero-shot 与 full-shot，设计 B/P 只做 zero-shot；P 另比较了**源码默认自动总轮数/分类头末 10 轮**与 fulltime 150/150 轮的联合日程敏感性，不能称为论文协议。真实产物见 `../data/`，结果图由 `../scripts/figgen/build_real.py` 生成于 [`figures/`](figures/)。
+>
+> **正式图片口径**：报告只认 [`reports/figures/`](figures/) 中由真实产物重绘、并登记在 [`data/figure_manifest.json`](../data/figure_manifest.json) 的图片；`data/figures/` 或 `data/legacy_outputs_20260718/` 中的辅助/旧图不作为报告证据。
 
 ---
 
@@ -60,11 +62,15 @@
 cd ../scripts/figgen && python build_real.py all   # 在 scib 环境
 ```
 
-完整本机训练产物、checkpoint 与日志都存在时，可运行最终只读校验门：
+`all` 成功后会事务写入 `data/figure_manifest.json`。回到项目根目录可执行
+`python scripts/validate_figure_manifest.py`，独立复核生成器、13 个输入源和 11 张正式 PNG 的哈希、尺寸与报告引用；最终总门禁也会调用同一检查。
+
+完整本机实验产物与日志存在时，可运行最终只读校验门；scVI checkpoint 采用三态检查：
+当前规范路径下 checkpoint/manifest 都缺失会明确记录为 `absent_by_design`，只出现一件或出现不匹配的一对则失败。
 
 ```bash
 cd ../data && python ../scripts/validate_corrected_outputs.py
-# 预期：17 PASS / 0 FAIL / 0 SKIP
+# 预期：18 PASS / 0 FAIL / 0 SKIP
 ```
 
 > 为何不用 data-URI 内嵌图：GitHub Markdown 会拦截 `data:` 图片（camo/CSP）导致裂图；所以**结果图走 PNG 文件、示意图走 Mermaid**是 GitHub 上都能渲染的稳妥组合。`build_structures.py` / `extract_sc_font.py`（旧的手绘示意图生成器）已随示意图转 Mermaid 而弃用。

@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-07-18T10:14:08.581793+00:00",
+  "generator": {
+    "path": "scripts/figgen/build_real.py",
+    "sha256": "9bb5d76f66cea2880c339b211b1e05f0abaac5906b577f232513321263034638"
+  },
+  "sources": {
+    "data/phase2_scatlasvae_loss.npz": {
+      "bytes": 7086,
+      "sha256": "5e3f2f4974b8b53504a2e16666f18e432d8bbd6ca05b4518ce509cdefdb0767b"
+    },
+    "data/phase2_benchmark_results.csv": {
+      "bytes": 1269,
+      "sha256": "4cb83bc73f1f2378a660d67e135954ce435c17a1fce98140a35ddfbeac3525a5"
+    },
+    "data/phase4_ablation_results.csv": {
+      "bytes": 1261,
+      "sha256": "47afc06859e6f2361d688a61bef2f188219b3fbcc14eda1f617a0a372f89dd5f"
+    },
+    "data/tcell_processed.h5ad": {
+      "bytes": 855609589,
+      "sha256": "166eb2ecf70ef309c9c0af27ba6349294723c4fb670e1f85821a086676080029"
+    },
+    "data/phase5_minimal_bench.csv": {
+      "bytes": 1257,
+      "sha256": "1f48fdf2332f59130ce1fa51e3dc719d40d22f2165f46aae5493ff9ca2fa480d"
+    },
+    "data/phase5_transfer_results_paper.csv": {
+      "bytes": 492,
+      "sha256": "6de0e54fee34d463dac80187a4ec2c81329c5893da6a11ca3d9fe95a9b86bc38"
+    },
+    "data/phase5_transfer_results_patient_paper.csv": {
+      "bytes": 228,
+      "sha256": "6080ef25c01d1743cba6b84924d8dad42d1044e071f45a832abe7c36398cfbaf"
+    },
+    "data/phase5_fair_knn_results.csv": {
+      "bytes": 564,
+      "sha256": "49c51c4d9f8ceeef43631ca398fb579eeb835b9291c4ebe2a6afded4eb1f54d0"
+    },
+    "data/phase5_transfer_results_patient_fulltime.csv": {
+      "bytes": 227,
+      "sha256": "640830360133ebe9c4d52d24119ebc0bd5ec80674c2d07615f34bba13edc2f42"
+    },
+    "data/phase5_invariance_scatlasvae.csv": {
+      "bytes": 310,
+      "sha256": "424bef14e5e763cfa679a198fc5e579ffe40b5c85cf5f0469c56ed2765df8ffa"
+    },
+    "data/phase5_invariance_scvi.csv": {
+      "bytes": 508,
+      "sha256": "ac7fd78003af41fb94f9a986f273329c6965861878cfda6a7c52a98e635ebec4"
+    },
+    "data/phase5_scalability.csv": {
+      "bytes": 1893,
+      "sha256": "a9058160df51ae584b51b2894dd9a4f4d9b979b6673647590562858167380964"
+    },
+    "data/phase5_cross_atlas_head_alignment.csv": {
+      "bytes": 2071,
+      "sha256": "81da47f90f76365fce8abf2402f578275fb5f5fdccab4e9fb4df29eeac8978ed"
+    }
+  },
+  "figures": [
+    {
+      "target": "loss",
+      "path": "reports/figures/fig_phase2_loss_curve.png",
+      "bytes": 102535,
+      "width": 1207,
+      "height": 658,
+      "sha256": "33f03c1cb736355b2f4c95d1bd7ffe32c262af149edadd522691cea64935bf5b",
+      "sources": [
+        "data/phase2_scatlasvae_loss.npz"
+      ]
+    },
+    {
+      "target": "bench",
+      "path": "reports/figures/fig_phase2_benchmark_bars.png",
+      "bytes": 77554,
+      "width": 1190,
+      "height": 703,
+      "sha256": "7fdc6f6c49aa90125ecb679d919301901e1a8e04b0ff345626be121f72749189",
+      "sources": [
+        "data/phase2_benchmark_results.csv"
+      ]
+    },
+    {
+      "target": "ablation",
+      "path": "reports/figures/fig_phase4_ablation_bars.png",
+      "bytes": 72685,
+      "width": 1716,
+      "height": 717,
+      "sha256": "34954439c68ca35781efd79b8709dcb96f1352871fdc79884e91116598900cdf",
+      "sources": [
+        "data/phase4_ablation_results.csv"
+      ]
+    },
+    {
+      "target": "umap_integration",
+      "path": "reports/figures/fig_phase2_integration_umap.png",
+      "bytes": 2149172,
+      "width": 1670,
+      "height": 1400,
+      "sha256": "ceecb12814effc1ef4aa2e0246255e4e5b1e5de2dd9a709ce40abb742ad587ad",
+      "sources": [
+        "data/tcell_processed.h5ad"
+      ]
+    },
+    {
+      "target": "umap_compare",
+      "path": "reports/figures/fig_phase3_umap_compare.png",
+      "bytes": 1360320,
+      "width": 1792,
+      "height": 763,
+      "sha256": "b43cf706d1c212bcbdf58deb6f63328ddbabab37a5e89ec62781ebaf5b2a5e58",
+      "sources": [
+        "data/tcell_processed.h5ad"
+      ]
+    },
+    {
+      "target": "bench_minimal",
+      "path": "reports/figures/fig_phase5_minimal_bench.png",
+      "bytes": 73298,
+      "width": 1156,
+      "height": 703,
+      "sha256": "c8d94613ff6e770919bfdc5700c2e7497095c0501ccef36c4fc75a0be172c304",
+      "sources": [
+        "data/phase5_minimal_bench.csv"
+      ]
+    },
+    {
+      "target": "transfer",
+      "path": "reports/figures/fig_phase5_transfer.png",
+      "bytes": 87953,
+      "width": 2511,
+      "height": 731,
+      "sha256": "c3ae4bb515858fb65dfa86e1b48bcb49b06f8422a9f927fd025b70e294710bcb",
+      "sources": [
+        "data/phase5_transfer_results_paper.csv",
+        "data/phase5_transfer_results_patient_paper.csv",
+        "data/phase5_fair_knn_results.csv"
+      ]
+    },
+    {
+      "target": "transfer_protocol_p",
+      "path": "reports/figures/fig_phase5_transfer_patient_protocol.png",
+      "bytes": 73650,
+      "width": 1109,
+      "height": 721,
+      "sha256": "58c73c6297e5cf91c577cf0fe1ca1e92b5b84d15480525331e9316fa3e4b1d3c",
+      "sources": [
+        "data/phase5_transfer_results_patient_paper.csv",
+        "data/phase5_transfer_results_patient_fulltime.csv"
+      ]
+    },
+    {
+      "target": "invariance",
+      "path": "reports/figures/fig_phase5_invariance.png",
+      "bytes": 84964,
+      "width": 1880,
+      "height": 714,
+      "sha256": "9455ecf33906dc59b207c83a73e197e79f1422eacad9a67865deabdc96c6364e",
+      "sources": [
+        "data/phase5_invariance_scatlasvae.csv",
+        "data/phase5_invariance_scvi.csv"
+      ]
+    },
+    {
+      "target": "scalability",
+      "path": "reports/figures/fig_phase5_scalability.png",
+      "bytes": 140559,
+      "width": 2270,
+      "height": 716,
+      "sha256": "65ec1de8731d643f3e1c2a29f23f8abeb8fec5dc76e4ebe98aaba3621c495409",
+      "sources": [
+        "data/phase5_scalability.csv"
+      ]
+    },
+    {
+      "target": "cross_atlas",
+      "path": "reports/figures/fig_phase5_cross_atlas.png",
+      "bytes": 116496,
+      "width": 1343,
+      "height": 947,
+      "sha256": "f21fdfba4fc2c2cbd74534c5983e34437e6fc9260b78bb76f94c8eab7f7661b4",
+      "sources": [
+        "data/phase5_cross_atlas_head_alignment.csv"
+      ]
+    }
+  ]
+}

@@ -1,8 +1,11 @@
 """阶段二 · 步骤 2–3：数据检查 + 预处理（QC / HVG / 归一化 / PCA 基线）。
 
 用途
-    把 TCellLandscape（GEO GSE156728）组装/载入为 AnnData，先按格式清单检查，
+    把 Zheng/GSE156728 10X CD8 重建对象组装/载入为 AnnData，先按格式清单检查，
     再做标准预处理，产出供 scAtlasVAE 与评测使用的 h5ad。
+
+    ``TCellLandscape_raw.h5ad`` 是沿用的历史文件名；其内容不是带 28 个
+    ``study_name`` 的论文成品 TCellLandscape。
 
 用法（在环境 A `scatlasvae` 中）
     python phase2_data_download_and_qc.py --stage check       # 只检查格式、打印列名
@@ -21,7 +24,7 @@ import scanpy as sc
 # ============================================================
 # CONFIG —— 用 --stage check 打印出真实列名后，回来改这里
 # ============================================================
-RAW_PATH = "TCellLandscape_raw.h5ad"      # 原始数据（X = 整数计数）
+RAW_PATH = "TCellLandscape_raw.h5ad"      # 历史兼容名；实际为 Zheng/GSE156728 8 癌种 10X CD8 原始计数
 OUT_PATH = "tcell_processed.h5ad"          # 预处理输出
 # 实跑确定（phase2_data_fetch_gse156728.py 组装的 GSE156728 CD8 子集）：
 # batch 取 patient（45 个样本，真实的多样本整合挑战）；cell_type 取 meta.cluster（17 个 CD8 亚型）。
@@ -77,7 +80,7 @@ def preprocess(adata):
     sc.tl.pca(adata, n_comps=50)
     adata.obsm["X_pca"] = adata.obsm["X_pca"][:, :50]
 
-    # 恢复 X 为 log 归一化值（scale 后的 X 只用于 PCA），counts 仍在 layers 里
+    # 恢复 X 为原始计数（normalize/log/scale 后的矩阵只用于 PCA），counts 仍在 layers 里
     adata.X = adata.layers["counts"].copy()   # 交给下游：X=raw counts, 需要时再取 layers
     print("预处理完成:", adata.shape, "| 已存 layers['counts'] 与 obsm['X_pca']")
     return adata
