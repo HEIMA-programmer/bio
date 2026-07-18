@@ -125,7 +125,7 @@ def bench():
         ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"],
         "整合评测：PCA / scVI / scAtlasVAE(无监督) / scAtlasVAE(监督)（真实，scib-metrics）",
         "fig_phase2_benchmark_bars",
-        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看相对排序。无监督 scAtlasVAE≈scVI、监督版更高——复现论文 Ext. Data Fig. 2a。")
+        note="注：scib-metrics 与论文旧 scib 数值不可直接比，只看内部相对排序；监督版更高的方向与论文一致。")
 
 
 def bench_minimal():
@@ -140,15 +140,36 @@ def bench_minimal():
 
 def transfer():
     """阶段 5 · E1：注释迁移的 acc/macroF1/AUROC 分组条形（按设计×方法）。
-    用**论文协议**结果（phase5_transfer_results_paper.csv：分类头训末10轮、与论文同起跑线）。"""
+    scAtlasVAE 使用 paper 日程；kNN 使用真正 reference-only frozen encoder，
+    不再把 full-data X_scVI 的 transductive 诊断画成公平基线。
+    """
     import pandas as pd
-    df = pd.read_csv(os.path.join(DATA_DIR, "phase5_transfer_results_paper.csv"))
+    result_paths = [os.path.join(DATA_DIR, "phase5_transfer_results_paper.csv")]
+    patient_path = os.path.join(DATA_DIR, "phase5_transfer_results_patient_paper.csv")
+    if os.path.exists(patient_path):
+        result_paths.append(patient_path)
+    df = pd.concat([pd.read_csv(path) for path in result_paths], ignore_index=True)
+    df = df[df["method"] != "kNN on scVI latent"].copy()
+    fair_path = os.path.join(DATA_DIR, "phase5_fair_knn_results.csv")
+    if not os.path.exists(fair_path):
+        raise FileNotFoundError(fair_path)
+    fair = pd.read_csv(fair_path)
+    fair = fair[fair["kind"].str.startswith("fair-inductive", na=False)].copy()
+    fair["method"] = "scVI kNN (ref-only frozen)"
+    df = pd.concat(
+        [df, fair[["design", "method", "accuracy", "macro_f1", "macro_ovr_auc"]]],
+        ignore_index=True,
+    )
     metrics = [("accuracy", "Accuracy"), ("macro_f1", "macro-F1"), ("macro_ovr_auc", "macro OVR-AUC")]
-    designs = {"A": "设计A(随机5%)", "B": "设计B(整癌种UCEC)"}
+    designs = {
+        "A": "设计A(随机5%)",
+        "B": "设计B(整癌种UCEC)",
+        "P": "设计P(整位patient)",
+    }
     mcol = {"scAtlasVAE (zero-shot)": PAL["encoder"]["ink"],
             "scAtlasVAE (full-shot)": PAL["latent"]["ink"],
-            "kNN on scVI latent": PAL["accentA"]["ink"]}
-    dlist = [d for d in ["A", "B"] if d in set(df["design"])]
+            "scVI kNN (ref-only frozen)": PAL["accentA"]["ink"]}
+    dlist = [d for d in ["A", "B", "P"] if d in set(df["design"])]
     fig, axes = plt.subplots(1, len(dlist), figsize=(5.6 * len(dlist), 4.7), squeeze=False)
     for ax, d in zip(axes[0], dlist):
         sub = df[df["design"] == d]
@@ -166,10 +187,50 @@ def transfer():
         ax.legend(fontsize=8.3, frameon=False, loc="lower left")
         _clean(ax)
     axes[0][0].set_ylabel("分数（越高越好）", fontsize=10)
-    fig.suptitle("注释迁移（Task 3）：zero-shot / full-shot / kNN 对照（真实，论文协议·分类头末10轮）",
+    fig.suptitle("注释迁移（Task 3）：scAtlasVAE paper 日程 + reference-only frozen scVI kNN",
                  fontsize=12.5, fontweight="bold", y=1.02)
     fig.tight_layout()
     _save(fig, "fig_phase5_transfer")
+
+
+def transfer_protocol_p():
+    """设计 P 的 zero-shot 分类头训练日程对照；fulltime 不是 full-shot。"""
+    import pandas as pd
+    paper_path = os.path.join(DATA_DIR, "phase5_transfer_results_patient_paper.csv")
+    fulltime_path = os.path.join(DATA_DIR, "phase5_transfer_results_patient_fulltime.csv")
+    for path in (paper_path, fulltime_path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(path)
+    rows = []
+    for path, label in (
+        (paper_path, "zero-shot (paper: 末10轮)"),
+        (fulltime_path, "zero-shot (fulltime: 150/150轮)"),
+    ):
+        frame = pd.read_csv(path)
+        row = frame[frame["method"] == "scAtlasVAE (zero-shot)"].iloc[0].copy()
+        row["method"] = label
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    metrics = [("accuracy", "Accuracy"), ("macro_f1", "macro-F1"),
+               ("macro_ovr_auc", "macro OVR-AUC")]
+    colors = [PAL["encoder"]["ink"], PAL["accentB"]["ink"]]
+    fig, ax = plt.subplots(figsize=(8.6, 4.8))
+    x = np.arange(len(metrics)); w = 0.34
+    for i, (_, row) in enumerate(df.iterrows()):
+        vals = [float(row[k]) for k, _ in metrics]
+        bars = ax.bar(x + (i - 0.5) * w, vals, w, color=colors[i],
+                      label=row["method"], edgecolor="white", linewidth=0.9)
+        ax.bar_label(bars, fmt="%.3f", fontsize=8.5, color=MUTED, padding=2)
+    ax.set_xticks(x); ax.set_xticklabels([label for _, label in metrics], fontsize=10)
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("分数（越高越好）", fontsize=10)
+    ax.set_title("设计 P：整位 patient RC.P20190923 的 zero-shot 训练日程敏感性",
+                 fontsize=12, fontweight="bold", pad=10)
+    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    fig.text(0.5, -0.01, "fulltime=分类头损失全程启用；不是 query 与 reference 共训的 full-shot。",
+             ha="center", fontsize=8.5, color=MUTED)
+    _clean(ax)
+    _save(fig, "fig_phase5_transfer_patient_protocol")
 
 
 def invariance():
@@ -192,11 +253,11 @@ def invariance():
     ax.set_xticks(range(len(models)))
     ax.set_xticklabels(models, fontsize=9.5)
     ax.set_ylabel("打乱 batch 后 z 的平均 L2 漂移", fontsize=10)
-    ax.set_ylim(0, max(0.05, max(drift) * 1.25))
+    ax.set_ylim(0, max(0.01, max(drift) * 1.35))
     ax.set_title("批不变编码器探针：同一批细胞、打乱 batch，潜向量动不动？（真实）",
                  fontsize=12, fontweight="bold", pad=10)
-    sub = ("蓝=编码器不吃 batch→漂移≈0；玫红=编码器吃 batch→明显漂移。scAtlasVAE **结构上永不**编码 batch；"
-           "scVI 默认也不编码(细节)，仅 encode_covariates=True 时才 batch-variant。")
+    sub = ("蓝=encoder 不显式接收 batch 元数据→本探针漂移≈0；玫红=显式接收 batch→漂移。"
+           "这不保证表达矩阵 X 中的批次信号自动消失；统计混合仍看 patient-based 指标。")
     fig.text(0.5, -0.02, sub, ha="center", fontsize=8.2, color=MUTED)
     _clean(ax)
     _save(fig, "fig_phase5_invariance")
@@ -254,16 +315,24 @@ def _scatter_by(ax, xy, labels, title, palette=None, s=3, legend=False, max_leg=
 
 
 def umap_integration():
-    """真实整合 UMAP：X_pca(未校正) vs X_scAtlasVAE(整合后)，按 batch(癌种) 与 cell_type 上色。"""
-    import scanpy as sc
-    a = sc.read_h5ad(os.path.join(DATA_DIR, "tcell_processed.h5ad"))
-    up = a.obsm["X_umap_pca"]; us = a.obsm["X_umap_scatlasvae"]
-    batch = a.obs["cancerType"].values     # 8 类，可读；作 batch/技术轴的可视化
-    ctype = a.obs["cell_type"].values      # 17 个 CD8 亚型
+    """真实整合 UMAP：X_pca vs X_scAtlasVAE，分别按训练 batch(patient) 和 cell_type 上色。"""
+    import h5py
+    # 该图只需 obs/obsm；直接切片 HDF5，避免导入 Scanpy 或加载 10.5 万 × 4000 的表达矩阵。
+    with h5py.File(os.path.join(DATA_DIR, "tcell_processed.h5ad"), "r") as h5:
+        up = h5["obsm"]["X_umap_pca"][...]
+        us = h5["obsm"]["X_umap_scatlasvae"][...]
+
+        def read_categorical_obs(key):
+            node = h5["obs"][key]
+            categories = node["categories"].asstr()[...]
+            return categories[node["codes"][...]]
+
+        batch = read_categorical_obs("patient")    # 模型训练与 scIB 评测实际使用的 batch（45 位患者）
+        ctype = read_categorical_obs("cell_type")  # 17 个 CD8 亚型
     fig, ax = plt.subplots(2, 2, figsize=(11.2, 9.2))
-    _scatter_by(ax[0, 0], up, batch, "未校正 X_pca · 按癌种(batch)")
+    _scatter_by(ax[0, 0], up, batch, "未校正 X_pca · 按患者(batch)")
     _scatter_by(ax[0, 1], up, ctype, "未校正 X_pca · 按细胞类型", legend=True)
-    _scatter_by(ax[1, 0], us, batch, "scAtlasVAE · 按癌种(batch)")
+    _scatter_by(ax[1, 0], us, batch, "scAtlasVAE · 按患者(batch)")
     _scatter_by(ax[1, 1], us, ctype, "scAtlasVAE · 按细胞类型", legend=True)
     fig.suptitle("整合前(上) vs 整合后(下)：批次混合↑、细胞类型仍分得开（真实结果）",
                  fontsize=13.5, fontweight="bold", y=0.995)
@@ -272,40 +341,72 @@ def umap_integration():
 
 
 def scalability():
-    """可扩展性：训练时间 / 峰值显存 随细胞数增长（对标论文 Ext. Data Fig. 4e,f）。"""
+    """可扩展性：时间、进程内存与 CUDA allocator 分口径展示。"""
     import pandas as pd
     df = pd.read_csv(os.path.join(DATA_DIR, "phase5_scalability.csv")).sort_values("n_cells")
+    required = {
+        "load_setup_fit_seconds", "peak_process_rss_mb", "peak_process_private_mb",
+        "peak_cuda_allocated_mb", "peak_cuda_reserved_mb",
+    }
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise KeyError(
+            f"phase5_scalability.csv 仍是旧内存口径，缺少 {missing}；"
+            "请先运行升级后的 phase5_scalability.py"
+        )
     n = df["n_cells"].values / 1000.0   # 千细胞
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.5))
+    fig, axes = plt.subplots(1, 3, figsize=(15.2, 4.6))
     # 左：时间
-    axes[0].plot(n, df["fit_seconds"].values, "o-", color=PAL["encoder"]["ink"], lw=2.2, ms=7)
+    axes[0].plot(n, df["fit_seconds"].values, "o-", color=PAL["encoder"]["ink"],
+                 lw=2.2, ms=7, label="model.fit")
+    axes[0].plot(n, df["load_setup_fit_seconds"].values, "s--", color=PAL["latent"]["ink"],
+                 lw=1.8, ms=6, label="读取+初始化+fit")
     axes[0].set_xlabel("训练细胞数（千）", fontsize=10)
-    axes[0].set_ylabel("固定 epoch 训练墙钟时间 (s)", fontsize=10)
-    axes[0].set_title("训练时间 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
-    # 右：显存。**y 轴从 0 起**，避免把 ~110MB 的 0.1MB 抖动放大成"断崖"假象——
-    # 峰值显存实测几乎恒定（分批训练，GPU 上只驻留一个 minibatch），要如实画成一条平线。
-    axes[1].plot(n, df["peak_gpu_mb"].values, "s-", color=PAL["accentB"]["ink"], lw=2.2, ms=7)
+    axes[0].set_ylabel("固定 epoch 墙钟时间 (s)", fontsize=10)
+    axes[0].set_title("时间（fresh worker）", fontsize=12, fontweight="bold", pad=8)
+    axes[0].legend(frameon=False, fontsize=8)
+
+    # 中：完整 Python 进程内存，覆盖 backed 读取、最小 AnnData、模型初始化和 fit。
+    axes[1].plot(n, df["peak_process_rss_mb"].values, "o-", color=PAL["accentA"]["ink"],
+                 lw=2.2, ms=7, label="RSS / working set")
+    axes[1].plot(n, df["peak_process_private_mb"].values, "s--", color=PAL["accentB"]["ink"],
+                 lw=1.8, ms=6, label="private bytes")
     axes[1].set_xlabel("训练细胞数（千）", fontsize=10)
-    axes[1].set_ylabel("峰值显存 (MB)", fontsize=10)
-    axes[1].set_title("峰值显存 vs 细胞数", fontsize=12, fontweight="bold", pad=8)
-    axes[1].set_ylim(0, float(df["peak_gpu_mb"].max()) * 1.5)
-    axes[1].annotate("几乎恒定 ~110 MB（分批训练，GPU 只驻留 1 个 minibatch）",
-                     xy=(n.mean(), float(df["peak_gpu_mb"].max())),
-                     xytext=(n.min(), float(df["peak_gpu_mb"].max()) * 1.18),
-                     fontsize=8.4, color=MUTED)
+    axes[1].set_ylabel("峰值进程内存 (MiB)", fontsize=10)
+    axes[1].set_title("CPU/进程总口径", fontsize=12, fontweight="bold", pad=8)
+    axes[1].set_ylim(bottom=0)
+    axes[1].legend(frameon=False, fontsize=8)
+
+    # 右：仅 PyTorch CUDA allocator。allocated 与 reserved 都不等于进程总显存。
+    axes[2].plot(n, df["peak_cuda_allocated_mb"].values, "o-", color=PAL["encoder"]["ink"],
+                 lw=2.2, ms=7, label="CUDA allocated")
+    axes[2].plot(n, df["peak_cuda_reserved_mb"].values, "s--", color=PAL["latent"]["ink"],
+                 lw=1.8, ms=6, label="CUDA reserved")
+    axes[2].set_xlabel("训练细胞数（千）", fontsize=10)
+    axes[2].set_ylabel("峰值 CUDA allocator (MiB)", fontsize=10)
+    axes[2].set_title("GPU allocator 口径", fontsize=12, fontweight="bold", pad=8)
+    axes[2].set_ylim(bottom=0)
+    axes[2].legend(frameon=False, fontsize=8)
     for ax in axes:
         _clean(ax)
         ax.set_xlim(0, n.max() * 1.08)
-    fig.suptitle("scAtlasVAE 可扩展性（本机 4060 实测，对标 Ext. Data Fig. 4e,f）",
+    fig.suptitle("scAtlasVAE 可扩展性：时间 / 进程内存 / CUDA 分口径（本机实测）",
                  fontsize=13, fontweight="bold", y=1.02)
     fig.tight_layout()
     _save(fig, "fig_phase5_scalability")
 
 
 def cross_atlas():
-    """Task 2：跨图谱标签对齐矩阵热图（Yost CD8 亚型 × Zheng 亚型，行归一化占比）。"""
+    """Task 2：两个分类头对所有细胞的预测标签共现矩阵。"""
     import pandas as pd
-    M = pd.read_csv(os.path.join(DATA_DIR, "phase5_cross_atlas_alignment.csv"), index_col=0)
+    matrix_path = os.path.join(DATA_DIR, "phase5_cross_atlas_head_alignment.csv")
+    if not os.path.exists(matrix_path):
+        raise FileNotFoundError(
+            f"缺少论文式多分类头对齐结果：{matrix_path}。请先重新运行 "
+            "phase5_cross_atlas.py；旧 phase5_cross_atlas_alignment.csv 是 "
+            "latent-kNN 结果，不能用于这张多分类头预测共现图。"
+        )
+    M = pd.read_csv(matrix_path, index_col=0)
     fig, ax = plt.subplots(figsize=(max(8.5, 0.55 * M.shape[1]), 0.7 * M.shape[0] + 2.2))
     im = ax.imshow(M.values, aspect="auto", cmap="magma", vmin=0)
     ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(M.columns, rotation=90, fontsize=7)
@@ -317,12 +418,12 @@ def cross_atlas():
             if v > 0.15:
                 ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
                         color="white" if v < 0.6 else "black")
-    ax.set_xlabel("Zheng 亚型（我们的图谱，meta.cluster）", fontsize=10)
-    ax.set_ylabel("Yost CD8 亚型", fontsize=10)
-    ax.set_title("Task 2 跨图谱标签对齐：每个 Yost 亚型的最近邻 Zheng 亚型分布（行归一化，真实）\n"
-                 "耗竭态 CD8_ex/CD8_ex_act → Tex，记忆 CD8_mem → Tem/Tm——生物学对上了",
+    ax.set_xlabel("主分类头预测的 Zheng 标签", fontsize=10)
+    ax.set_ylabel("附加分类头预测的 Yost 标签", fontsize=10)
+    ax.set_title("Task 2 跨图谱标签对齐：两分类头对所有细胞的预测共现（行归一化）\n"
+                 "每行表示 P（Zheng 头预测标签 | Yost 头预测标签）",
                  fontsize=10.5, fontweight="bold", pad=10)
-    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02, label="占比")
+    fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02, label="预测共现占比")
     _save(fig, "fig_phase5_cross_atlas")
 
 
@@ -330,20 +431,24 @@ def umap_compare():
     """官方 vs 手写 VAE 的 UMAP 对照（按细胞类型上色）。
 
     注意 UMAP 朝向是任意的：两套 latent 各自独立跑 UMAP，实测两图"各亚型横坐标"
-    相关 r≈-0.895——即整张图互为**左右镜像**（红 Temra 官方在最左、手写在最右）。
+    相关 r≈-0.929——即整张图近似互为左右镜像。
     镜像/旋转无科学含义，为便于并排对照，这里把手写面板的 UMAP1 取反（水平镜像回来），
-    让同一亚型落到同侧；判定"趋势一致"看的是拓扑邻接，不是绝对左右。
+    让同一亚型落到同侧。该图只辅助观察拓扑；复现是否成立仍以 benchmark 和 kNN overlap 为准。
     """
-    import scanpy as sc
-    a = sc.read_h5ad(os.path.join(DATA_DIR, "tcell_processed.h5ad"))
-    ctype = a.obs["cell_type"].values
-    u_off = np.asarray(a.obsm["X_umap_official"])
-    u_mine = np.asarray(a.obsm["X_umap_mine"]).copy()
+    # 只读取这张图需要的缓存 UMAP 与 obs，避免为绘图加载约 856 MB 的完整表达矩阵。
+    # 数组与此前 scanpy.read_h5ad 路径完全相同，因此不会重算或改变 UMAP 布局。
+    import h5py
+    with h5py.File(os.path.join(DATA_DIR, "tcell_processed.h5ad"), "r") as h5:
+        cell_type_node = h5["obs"]["cell_type"]
+        categories = cell_type_node["categories"].asstr()[...]
+        ctype = categories[cell_type_node["codes"][...]]
+        u_off = h5["obsm"]["X_umap_official"][...]
+        u_mine = h5["obsm"]["X_umap_mine"][...].copy()
     u_mine[:, 0] = -u_mine[:, 0]          # 水平镜像，抵消两套独立 UMAP 的任意左右朝向
     fig, ax = plt.subplots(1, 2, figsize=(11.2, 5.0))
     _scatter_by(ax[0], u_off, ctype, "官方 scAtlasVAE latent")
     _scatter_by(ax[1], u_mine, ctype, "手写最小 VAE latent（UMAP1 已水平镜像对齐）", legend=True)
-    fig.suptitle("官方 vs 手写 VAE：UMAP 按细胞类型上色（趋势一致即成功）",
+    fig.suptitle("官方 vs 手写 VAE：UMAP 仅作定性拓扑比较（定量见 benchmark / kNN overlap）",
                  fontsize=13, fontweight="bold", y=1.0)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     _save(fig, "fig_phase3_umap_compare")
@@ -353,10 +458,12 @@ if __name__ == "__main__":
     targets = sys.argv[1:] or ["all"]
     if "all" in targets:
         targets = ["loss", "bench", "ablation", "umap_integration", "umap_compare",
-                   "bench_minimal", "transfer", "invariance", "scalability", "cross_atlas"]
+                   "bench_minimal", "transfer", "transfer_protocol_p", "invariance",
+                   "scalability", "cross_atlas"]
     fns = {"loss": loss_curve, "bench": bench, "ablation": ablation,
-           "umap_integration": umap_integration, "umap_compare": umap_compare,
-           "bench_minimal": bench_minimal, "transfer": transfer, "invariance": invariance,
+            "umap_integration": umap_integration, "umap_compare": umap_compare,
+            "bench_minimal": bench_minimal, "transfer": transfer,
+            "transfer_protocol_p": transfer_protocol_p, "invariance": invariance,
            "scalability": scalability, "cross_atlas": cross_atlas}
     for t in targets:
         if t in fns:

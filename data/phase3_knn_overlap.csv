@@ -1,0 +1,2 @@
+official_embedding,minimal_embedding,k,n_sample,mean_knn_jaccard
+X_scAtlasVAE_sup,X_minimal,30,2000,0.20369489353092182

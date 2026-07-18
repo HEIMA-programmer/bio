@@ -6,7 +6,7 @@ zero-shot 只在 reference 上训模型、query 从没被见过 —— inductive
 
 本脚本对每个设计各算两版 kNN，隔离这个差异：
   - transductive：直接用全量 X_scVI（复算，应与 transfer CSV 的 kNN 行一致，作自检）。
-  - fair(inductive)：scVI **只在 reference 上训练**，query 用 scArches 对齐后过**同一个
+  - fair(inductive)：scVI **只在 reference 上训练**，query counts 直接过**同一个
     batch-invariant 编码器**投影（encode_covariates=False，不训练 query、不看 query 标签）
     —— 与 scAtlasVAE zero-shot 同为 inductive、真正同起跑线。
 
@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import scvi
+import torch
+from scipy import sparse
+from scvi import REGISTRY_KEYS
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
@@ -27,6 +30,23 @@ K = 13
 LABEL = "cell_type"
 BATCH = "patient"
 DROP_CANCER = "UCEC"
+INFERENCE_BATCH_SIZE = 128
+
+
+def select_patient_holdout(adata):
+    """Match transfer design P: broadest label coverage, then most cells."""
+    table = (
+        adata.obs.groupby(BATCH, observed=True)
+        .agg(n_cells=(LABEL, "size"), n_labels=(LABEL, "nunique"))
+        .reset_index()
+    )
+    table[BATCH] = table[BATCH].astype(str)
+    table = table.sort_values(
+        ["n_labels", "n_cells", BATCH], ascending=[False, False, True]
+    ).reset_index(drop=True)
+    if table.empty:
+        raise ValueError("No patient is available for design P")
+    return str(table.loc[0, BATCH])
 
 
 def macro_ovr_auc(yt_idx, probs):
@@ -53,23 +73,44 @@ def knn_eval(zref, yref, zq, yq):
     return acc, f1, auc
 
 
+def encoder_dataloader(adata, layer="counts", batch_size=INFERENCE_BATCH_SIZE):
+    """为 scVI encoder 构造只含 counts 和占位 batch 的确定性数据流。
+
+    scvi-tools 1.3.3 的 ``get_latent_representation`` 接受自定义 dataloader。
+    本实验显式使用 ``encode_covariates=False``，因此 batch tensor 不进入 encoder；
+    这里的全零 batch 仅用于满足 VAE inference 接口，不表示把 query 病人拟合为
+    reference 中的某位病人。
+    """
+    x = adata.layers[layer] if layer is not None else adata.X
+    for start in range(0, adata.n_obs, batch_size):
+        xb = x[start : start + batch_size]
+        if sparse.issparse(xb):
+            xb = xb.toarray()
+        xb = np.asarray(xb, dtype=np.float32)
+        yield {
+            REGISTRY_KEYS.X_KEY: torch.from_numpy(xb),
+            REGISTRY_KEYS.BATCH_KEY: torch.zeros((xb.shape[0], 1), dtype=torch.int64),
+        }
+
+
 def project_query_inductive(ref, q):
-    """reference-only scVI + scArches 对齐，用同一个 batch-invariant 编码器投影 query（不训练 query）。"""
+    """训练 reference-only scVI，并用冻结的 reference encoder 直接投影 query。"""
+    if not ref.var_names.equals(q.var_names):
+        raise ValueError("reference/query 的基因及顺序必须完全一致，不能直接 encoder 投影")
+
     scvi.model.SCVI.setup_anndata(ref, layer="counts", batch_key=BATCH)
-    rm = scvi.model.SCVI(ref)          # 默认 encode_covariates=False → 编码器 F(X) 不吃 batch
+    rm = scvi.model.SCVI(ref, encode_covariates=False)
     rm.train(max_epochs=10)
     zref = rm.get_latent_representation()
-    # scArches 对齐 query（新病人映射到占位），编码器 batch-invariant 故 batch 取值不影响 z
-    scvi.model.SCVI.prepare_query_anndata(q, rm)
-    try:
-        zq = rm.get_latent_representation(q)          # 首选：不训练 query、纯归纳投影
-        mode = "ref-only+project(no surgery)"
-    except Exception as e:
-        print(f"    直接投影失败({e})，退回 scArches surgery（仍不看 query 标签）")
-        qm = scvi.model.SCVI.load_query_data(q, rm)
-        qm.train(max_epochs=10, plan_kwargs={"weight_decay": 0.0})
-        zq = qm.get_latent_representation()
-        mode = "ref-only+scArches surgery"
+
+    if rm.module.encode_covariates:
+        raise RuntimeError("该基线要求 encode_covariates=False；否则 query batch 会影响 encoder")
+
+    # 直接调用训练完成的 reference encoder。没有 query model、parameter surgery 或 query 训练。
+    zq = rm.get_latent_representation(
+        dataloader=encoder_dataloader(q, layer="counts")
+    )
+    mode = "reference-encoder-direct(no-query-training)"
     return zref, zq, mode
 
 
@@ -77,15 +118,21 @@ def main():
     adata = sc.read_h5ad(PROC)
     yall = adata.obs[LABEL].astype(str).values
     rows = []
-    for design in ["A", "B"]:
+    for design in ["A", "B", "P"]:
         rng = np.random.default_rng(SEED)
         n = adata.n_obs
         if design == "A":
             qmask = np.zeros(n, dtype=bool)
             qi = rng.choice(n, size=int(round(0.05 * n)), replace=False)
             qmask[qi] = True
-        else:
+            query_unit = "random 5% cells"
+        elif design == "B":
             qmask = (adata.obs["cancerType"].astype(str).values == DROP_CANCER)
+            query_unit = f"cancer:{DROP_CANCER}"
+        else:
+            patient = select_patient_holdout(adata)
+            qmask = (adata.obs[BATCH].astype(str).values == patient)
+            query_unit = f"patient:{patient}"
         ref_mask = ~qmask
         print(f"\n=== 设计 {design}: ref n={int(ref_mask.sum())} / query n={int(qmask.sum())} ===")
 
@@ -93,7 +140,7 @@ def main():
         Z = adata.obsm["X_scVI"]
         acc_t, f1_t, auc_t = knn_eval(Z[ref_mask], yall[ref_mask], Z[qmask], yall[qmask])
         print(f"  transductive kNN (full-data X_scVI): acc={acc_t:.3f} f1={f1_t:.3f} AUROC={auc_t:.3f}")
-        rows.append(dict(design=design, kind="transductive(full-data scVI)",
+        rows.append(dict(design=design, query_unit=query_unit, kind="transductive(full-data scVI)",
                          accuracy=round(acc_t, 4), macro_f1=round(f1_t, 4), macro_ovr_auc=round(auc_t, 4)))
         pd.DataFrame(rows).to_csv("phase5_fair_knn_results.csv", index=False)
 
@@ -103,7 +150,7 @@ def main():
         zref, zq, mode = project_query_inductive(ref, q)
         acc_f, f1_f, auc_f = knn_eval(zref, yall[ref_mask], zq, yall[qmask])
         print(f"  FAIR inductive kNN ({mode}): acc={acc_f:.3f} f1={f1_f:.3f} AUROC={auc_f:.3f}")
-        rows.append(dict(design=design, kind=f"fair-inductive({mode})",
+        rows.append(dict(design=design, query_unit=query_unit, kind=f"fair-inductive({mode})",
                          accuracy=round(acc_f, 4), macro_f1=round(f1_f, 4), macro_ovr_auc=round(auc_f, 4)))
         pd.DataFrame(rows).to_csv("phase5_fair_knn_results.csv", index=False)
 

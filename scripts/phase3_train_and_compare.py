@@ -11,7 +11,13 @@
 
 对应报告：reports/phase3_reimplement_vae.md
 """
+import argparse
+import os
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import numpy as np
+import pandas as pd
 import scanpy as sc
 from sklearn.neighbors import NearestNeighbors
 
@@ -37,9 +43,8 @@ def knn_overlap(emb_a, emb_b, k=30, n_sample=2000, seed=0):
     return float(np.mean(jacc))
 
 
-def main():
-    adata = sc.read_h5ad(PROC_PATH)
-
+def train_minimal(adata):
+    """训练手写实现并写入 ``X_minimal``。"""
     # 取原始计数、把 batch/label 字符串转成整数索引（手写模型吃索引）
     X = np.asarray(adata.layers["counts"].todense() if hasattr(adata.layers["counts"], "todense")
                    else adata.layers["counts"]).astype("float32")
@@ -56,19 +61,48 @@ def main():
     model.fit(X, batch_idx, labels=label_idx, device="cuda")
     adata.obsm["X_minimal"] = model.get_latent_embedding(X, device="cuda")
 
+
+def compare_existing_embeddings(adata):
+    """用当前官方嵌入重新计算 UMAP 与邻域重叠，不重训手写模型。"""
+    official_key = (
+        "X_scAtlasVAE_sup"
+        if "X_scAtlasVAE_sup" in adata.obsm
+        else "X_scAtlasVAE"
+    )
+    if "X_minimal" not in adata.obsm:
+        raise KeyError("缺少 X_minimal；请先用 --stage train 训练手写模型")
+
     # 定性：两套嵌入各出 UMAP（按 cell type 上色）
-    for rep, tag in [("X_scAtlasVAE", "official"), ("X_minimal", "mine")]:
+    for rep, tag in [(official_key, "official"), ("X_minimal", "mine")]:
         sc.pp.neighbors(adata, use_rep=rep, key_added=tag)
         sc.tl.umap(adata, neighbors_key=tag)
         adata.obsm[f"X_umap_{tag}"] = adata.obsm["X_umap"]
-        sc.pl.embedding(adata, basis=f"X_umap_{tag}", color=LABEL_KEY,
-                        save=f"_{tag}.png", show=False)
 
     # 定量：邻域重叠
-    ov = knn_overlap(adata.obsm["X_scAtlasVAE"], adata.obsm["X_minimal"])
+    ov = knn_overlap(adata.obsm[official_key], adata.obsm["X_minimal"])
     print(f"官方 vs 手写 的 kNN 邻域平均 Jaccard = {ov:.3f} （越高说明结构越一致）")
+    pd.DataFrame([{
+        "official_embedding": official_key,
+        "minimal_embedding": "X_minimal",
+        "k": 30,
+        "n_sample": min(2000, adata.n_obs),
+        "mean_knn_jaccard": ov,
+    }]).to_csv("phase3_knn_overlap.csv", index=False)
+
+
+def main(stage):
+    adata = sc.read_h5ad(PROC_PATH)
+    if stage == "train":
+        train_minimal(adata)
+    compare_existing_embeddings(adata)
     adata.write_h5ad(PROC_PATH)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--stage", choices=["train", "compare"], default="train",
+        help="train=重训手写模型后比较；compare=复用 X_minimal，仅刷新官方对比",
+    )
+    args = parser.parse_args()
+    main(args.stage)

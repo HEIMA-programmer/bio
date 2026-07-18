@@ -13,6 +13,9 @@
 对应报告
     reports/phase2_integration_and_benchmark.md 步骤 7 与第 7 节。
 """
+import argparse
+import matplotlib
+matplotlib.use("Agg")
 import scanpy as sc
 from scib_metrics.benchmark import Benchmarker
 
@@ -28,6 +31,11 @@ LABEL_KEY = "cell_type"
 # Harmony 结果仍可选（见 phase2_baseline_harmony.py）。
 EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE_unsup", "X_scAtlasVAE_sup"]
 
+ap = argparse.ArgumentParser()
+ap.add_argument("--n-jobs", type=int, default=4,
+                help="有限并行可避免 Windows 上 n_jobs=-1 产生过多线程并在收尾阶段停滞")
+args = ap.parse_args()
+
 adata = sc.read_h5ad(PROC_PATH)
 
 # pre_integrated_embedding_obsm_key="X_pca"：显式指定"未整合基线"用我们预处理算的 scaled-log PCA。
@@ -41,7 +49,7 @@ bm = Benchmarker(
     label_key=LABEL_KEY,
     embedding_obsm_keys=EMBEDDINGS,
     pre_integrated_embedding_obsm_key="X_pca",
-    n_jobs=-1,
+    n_jobs=args.n_jobs,
 )
 bm.benchmark()
 

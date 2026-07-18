@@ -15,6 +15,11 @@
 对应报告
     reports/phase5_deeper_validation.md（E4）与 reports/phase3_reimplement_vae.md。
 """
+import argparse
+import os
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import scanpy as sc
 from scib_metrics.benchmark import Benchmarker
 
@@ -24,24 +29,37 @@ LABEL_KEY = "cell_type"
 # 手写实现和三个参照并列；把 X_minimal 放最后，读表时一眼看它落在哪。
 EMBEDDINGS = ["X_pca", "X_scVI", "X_scAtlasVAE_sup", "X_minimal"]
 
-adata = sc.read_h5ad(PROC_PATH)
-missing = [k for k in EMBEDDINGS if k not in adata.obsm]
-if missing:
-    raise KeyError(f"缺少 obsm: {missing}（X_scAtlasVAE_sup 需先跑 phase2_run --mode unsup 补别名；"
-                   f"X_minimal 需先跑 phase3_train_and_compare.py 写入）")
+def main(n_jobs: int = 4):
+    adata = sc.read_h5ad(PROC_PATH)
+    missing = [k for k in EMBEDDINGS if k not in adata.obsm]
+    if missing:
+        raise KeyError(
+            f"缺少 obsm: {missing}（X_scAtlasVAE_sup 需先跑 phase2_run；"
+            f"X_minimal 需先跑 phase3_train_and_compare.py 写入）"
+        )
 
-# pre_integrated_embedding_obsm_key="X_pca"：见 phase2_benchmark_scib.py 的说明——
-#   修好 PCR comparison 恒为 0 且避免 obsm['X_pca'] 被原始计数 PCA 覆盖。
-bm = Benchmarker(
-    adata,
-    batch_key=BATCH_KEY,
-    label_key=LABEL_KEY,
-    embedding_obsm_keys=EMBEDDINGS,
-    pre_integrated_embedding_obsm_key="X_pca",
-    n_jobs=-1,
-)
-bm.benchmark()
-results = bm.get_results(min_max_scale=False)
-print(results)
-results.to_csv("phase5_minimal_bench.csv")
-print("完成：见 phase5_minimal_bench.csv")
+    # pre_integrated_embedding_obsm_key="X_pca"：见 phase2_benchmark_scib.py 的说明——
+    #   修好 PCR comparison 恒为 0 且避免 obsm['X_pca'] 被原始计数 PCA 覆盖。
+    bm = Benchmarker(
+        adata,
+        batch_key=BATCH_KEY,
+        label_key=LABEL_KEY,
+        embedding_obsm_keys=EMBEDDINGS,
+        pre_integrated_embedding_obsm_key="X_pca",
+        n_jobs=n_jobs,
+    )
+    bm.benchmark()
+    results = bm.get_results(min_max_scale=False)
+    print(results)
+    results.to_csv("phase5_minimal_bench.csv")
+    print("完成：见 phase5_minimal_bench.csv")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--n-jobs", type=int, default=4,
+        help="有限并行数；Windows 上避免 n_jobs=-1 过度并行或收尾停滞",
+    )
+    args = parser.parse_args()
+    main(n_jobs=args.n_jobs)
