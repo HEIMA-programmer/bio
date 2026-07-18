@@ -19,6 +19,7 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import torch
 from sklearn.neighbors import NearestNeighbors
 
 from minimal_scatlasvae import MinimalScAtlasVAE
@@ -52,13 +53,19 @@ def train_minimal(adata):
     label_cat = adata.obs[LABEL_KEY].astype("category")
     label_idx = label_cat.cat.codes.to_numpy()
 
+    # seed 必须在模型构造前设置，才能同时固定初始权重与 fit 内随机过程。
+    seed = 12
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     # 训练手写模型（默认超参与官方一致：lr=5e-5, bs=128, seed=12, KL 预热）
     model = MinimalScAtlasVAE(
         n_genes=X.shape[1],
         n_batch=int(batch_idx.max()) + 1,
         n_label=int(label_idx.max()) + 1,
     )
-    model.fit(X, batch_idx, labels=label_idx, device="cuda")
+    model.fit(X, batch_idx, labels=label_idx, seed=seed, device="cuda")
     adata.obsm["X_minimal"] = model.get_latent_embedding(X, device="cuda")
 
 

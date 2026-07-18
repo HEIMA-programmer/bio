@@ -77,8 +77,14 @@ try {
     Invoke-PipelineStep -Name "minimal_benchmark_current_official" -PythonExe $ScibPython -Arguments @(
         "..\scripts\phase5_bench_minimal.py", "--n-jobs", "4"
     )
+    Invoke-PipelineStep -Name "phase3_structure_metrics" -PythonExe $ScibPython -Arguments @(
+        "..\scripts\phase3_structure_metrics.py"
+    )
     Invoke-PipelineStep -Name "regenerate_downstream_figures" -PythonExe $ScibPython -Arguments @(
-        "scripts\figgen\build_real.py", "umap_compare", "bench_minimal"
+        "scripts\figgen\build_real.py", "all"
+    ) -WorkingDirectory $RepoRoot
+    Invoke-PipelineStep -Name "validate_canonical_figures" -PythonExe $ScibPython -Arguments @(
+        "scripts\validate_figure_manifest.py"
     ) -WorkingDirectory $RepoRoot
     Write-PipelineStatus -Status "complete" -Step "all" -Message "Downstream derived results are consistent with the corrected official embedding."
     exit 0

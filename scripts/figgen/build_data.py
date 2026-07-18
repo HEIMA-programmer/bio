@@ -1,9 +1,9 @@
-"""生成"数据图/定量图"（预期·示意）到 reports/*.svg，并输出 PNG 供目检。
+"""【已弃用】生成历史占位图；默认拒绝执行，且不得用于实验报告。
 
 这些图用于占位——数值是按"复现顺利、符合论文趋势"填的示意值；
 你在 4060 实跑后用真实数据替换。所有图都在角落标注「示意 / 预期」。
 
-运行：python3 build_data.py [fig_name ...]
+如确需考古：python build_data.py --allow-legacy-placeholder [fig_name ...]
 """
 import sys
 import math
@@ -124,9 +124,9 @@ def fig_phase2_loss_curve():
     ax2.plot(ep, klw, color=PAL["loss"]["ink"], lw=1.8, label="KL 权重(预热)")
     ax2.set_ylim(0, 1.02); ax2.set_ylabel("KL 权重 λ_KL", color=PAL["loss"]["ink"], fontsize=10)
     ax2.tick_params(axis="y", colors=PAL["loss"]["ink"]); ax2.grid(False)
-    ax2.axhline(0.18, color=PAL["loss"]["ink"], ls=":", lw=1.1, alpha=0.7)
-    ax2.annotate("默认 warmup=400，到 73 epoch 时 λ_KL≈0.18（从没到 1）",
-                 xy=(73, 0.18), xytext=(20, 0.5), fontsize=8.6, color=PAL["loss"]["ink"],
+    ax2.axhline(1.0, color=PAL["loss"]["ink"], ls=":", lw=1.1, alpha=0.7)
+    ax2.annotate("实际源码取 min(max_epoch, 400)，因此 73 epoch 内由 0 预热至约 1",
+                 xy=(73, 1.0), xytext=(8, 0.48), fontsize=8.6, color=PAL["loss"]["ink"],
                  arrowprops=dict(arrowstyle="->", color=PAL["loss"]["ink"], lw=1))
     _clean(ax); ax2.spines["top"].set_visible(False)
     ax.legend(fontsize=9, frameon=False, loc="center right")
@@ -158,7 +158,7 @@ def fig_phase3_umap_compare():
         ax.set_xlabel("UMAP1", fontsize=9.5); ax.set_ylabel("UMAP2", fontsize=9.5)
         _clean(ax)
     axes[1].legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=8.5, frameon=False)
-    fig.suptitle("官方 vs 手写：结构相似即成功（kNN 邻域 Jaccard ≈ 0.4–0.6）",
+    fig.suptitle("历史占位：UMAP 外观与任意 Jaccard 阈值都不能单独判定成功",
                  fontsize=13, fontweight="bold", y=1.02)
     _stamp(fig)
     save(fig, "fig_phase3_umap_compare")
@@ -274,7 +274,12 @@ REGISTRY = {
 }
 
 if __name__ == "__main__":
-    names = sys.argv[1:] or list(REGISTRY)
+    if "--allow-legacy-placeholder" not in sys.argv[1:]:
+        raise SystemExit(
+            "build_data.py 只含历史合成占位图，已禁止默认执行。"
+            "真实结果图请运行 build_real.py；考古需显式传 --allow-legacy-placeholder。"
+        )
+    names = [arg for arg in sys.argv[1:] if arg != "--allow-legacy-placeholder"] or list(REGISTRY)
     for n in names:
         REGISTRY[n]()
         print("built", n)

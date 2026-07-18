@@ -148,7 +148,7 @@ flowchart LR
 | **2 端到端跑通** | 用 GSE156728 重建的 104,805-cell Zheng CD8 对象走完“预处理→整合→评测”（不是带 28 个 `study_name` 的成品 TCellLandscape） | AnnData 数据结构；QC/HVG/归一化；如何**量化**整合好坏 | `scanpy` `anndata` `scvi-tools`(baseline) `scib-metrics` | 整合前后 UMAP + 指标对比表 | Ext. Data Fig 1–2 的方向性对应 |
 | **3 核心 VAE 从零重写** ★ | 带你逐行读 `_gex_model.py`，再对着它手写最小版 | VAE 全套；ZINB；KL 预热；**把论文公式/源码翻译成代码** | `torch.nn` `torch.distributions` | 手写模型 + "我的实现 vs 原实现"差异清单 | Fig 1b, Methods |
 | **4 消融实验** | 改一个设计旋钮，看结论怎么变 | 控制变量法；从"我复现了"到"我验证了作者为什么这么设计" | （复用上面） | 消融结果图/表 + 结论 | Ext. Data Fig 4 |
-| **5 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 复现论文招牌能力、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
+| **5 深入验证与扩展** | 注释迁移、监督vs无监督、批不变探针、手写VAE上标尺、指标对照 | 做论文能力的机制级对应实验、把观察升级为可测证据、诚实定位复现边界 | `sklearn`(迁移评测) | 迁移 AUROC/混淆矩阵 + 四方对比 + 探针 | Ext. Data Fig 2 |
 | **6 汇总报告** | 整理成组会汇报稿（含深入验证摘要） | 科学写作：诚实讲清做了/没做什么、为什么 | — | 最终报告 / slides | — |
 
 > 你现在在**总纲**。这张地图会一直放在这里，随时回来看自己在哪、为什么在这。
@@ -185,7 +185,7 @@ flowchart TB
 | 方法内部机制（编码器/解码器/ZINB/KL/分类头） | Fig 1b + Methods | 阶段 1 摸库 + **阶段 3 手写重写** | ✅ 超出论文（L2 从零手写）|
 | **Task 1** 单图谱整合（有/无监督） | Ext.Fig 1e, 2a–f | 阶段 2（PCA/scVI/无监督/监督 四方对比） | patient-level 对应实验，不是 study-level exact |
 | **Task 2** 跨图谱整合 + 标签对齐 | Ext.Fig 1f, 3 | 阶段 5（Zheng + Yost 双图谱、多分类头） | 对应实验；真实 head 共现与 latent/PCA 诊断分开 |
-| **Task 3** 注释迁移（zero/full-shot） | Ext.Fig 1g, 2g,h | 阶段 5（A=随机5%、B=整癌种、P=整患者；fair reference-only kNN；P paper-vs-fulltime 150/150） | A 可直接按留出单位对照；B/P 与 P 日程敏感性为扩展 |
+| **Task 3** 注释迁移（zero/full-shot） | Ext.Fig 1g, 2g,h | 阶段 5（A=随机5%，zero/full-shot；B=整癌种、P=整患者，仅 zero-shot；fair reference-only kNN；P 源码默认日程 vs fulltime 150/150） | A 可直接按留出单位对照；B/P 与 P 日程敏感性为扩展；源码默认末10轮不是论文协议 |
 | 超参 / 潜维度稳健性 | Ext.Fig 4d | 阶段 4 消融 | ✅ |
 | 可扩展性（时间/内存） | Ext.Fig 4e,f | 阶段 5（fresh-worker 时间、RSS/private、CUDA 两口径） | 趋势对应；内存定义不逐点对齐 |
 | 批不变编码器（机制实证） | Methods（F(X)） | 阶段 5 打乱-batch 探针 | ✅ 原创扩展 |

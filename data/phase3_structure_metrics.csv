@@ -1,0 +1,23 @@
+metric,scope,embedding,value,source,detail
+latent_centroid_distance_pearson,official_vs_minimal,pair,0.9031791010481096,H5AD obsm centroids,
+latent_centroid_distance_spearman,official_vs_minimal,pair,0.8945947235341825,H5AD obsm centroids,
+umap_centroid_distance_pearson,official_vs_minimal,pair,0.6333350395839636,H5AD obsm centroids,
+umap_centroid_distance_spearman,official_vs_minimal,pair,0.5696674776966747,H5AD obsm centroids,
+label_asw_raw,latent,X_scAtlasVAE_sup,0.01078240000000008,phase5_minimal_bench.csv,raw=2*Silhouette label-1
+scanpy_neighbor_graph_label_purity_micro,latent,X_scAtlasVAE_sup,0.5331527258105189,H5AD obsp/official_distances,Scanpy n_neighbors=15; stored graph has 14 non-self neighbours per cell
+scanpy_neighbor_graph_coarse_purity_micro,latent,X_scAtlasVAE_sup,0.6219141671267046,H5AD obsp/official_distances,
+literal_15_nonself_knn_label_purity_micro,latent,X_scAtlasVAE_sup,0.532307300860328,H5AD obsm + scipy cKDTree,
+kmeans_nmi,latent,X_scAtlasVAE_sup,0.3707757526072285,phase5_minimal_bench.csv,
+kmeans_ari,latent,X_scAtlasVAE_sup,0.247185690888345,phase5_minimal_bench.csv,
+label_asw_raw,latent,X_minimal,0.001563079999999939,phase5_minimal_bench.csv,raw=2*Silhouette label-1
+scanpy_neighbor_graph_label_purity_micro,latent,X_minimal,0.5262310276908817,H5AD obsp/mine_distances,Scanpy n_neighbors=15; stored graph has 14 non-self neighbours per cell
+scanpy_neighbor_graph_coarse_purity_micro,latent,X_minimal,0.6122008900883954,H5AD obsp/mine_distances,
+literal_15_nonself_knn_label_purity_micro,latent,X_minimal,0.5250188445207766,H5AD obsm + scipy cKDTree,
+kmeans_nmi,latent,X_minimal,0.3121410897464832,phase5_minimal_bench.csv,
+kmeans_ari,latent,X_minimal,0.17609738860194188,phase5_minimal_bench.csv,
+umap_30_nonself_knn_label_purity_micro,umap,X_umap_official,0.43684207178410706,H5AD obsm + scipy cKDTree,
+umap_30_nonself_knn_coarse_purity_micro,umap,X_umap_official,0.5352868024744366,H5AD obsm + scipy cKDTree,
+umap_30_nonself_knn_label_purity_micro,umap,X_umap_mine,0.4144799071291128,H5AD obsm + scipy cKDTree,
+umap_30_nonself_knn_coarse_purity_micro,umap,X_umap_mine,0.5070724997217053,H5AD obsm + scipy cKDTree,
+same_label_random_baseline,dataset,cell_type,0.10643661962095392,H5AD obs label frequencies,sum of squared class fractions
+independent_30nn_jaccard_random_approx,dataset,random_neighbour_sets,0.0001431447957323765,analytic approximation,ratio of expected intersection and union

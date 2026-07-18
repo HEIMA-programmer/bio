@@ -15,12 +15,14 @@ regenerate those local artifacts before rerunning the complete gate.
 During an incomplete rerun, ``--allow-missing`` turns missing *required*
 artifacts into SKIP records and exits successfully as long as every artifact
 that is present is valid.  Without that flag, a missing required artifact is
-a failure.  Optional Phase 3 outputs are checked when present.
+a failure.  Legacy Phase 3 overlap/benchmark outputs are checked when present;
+the consolidated Phase 3 structure-evidence CSV/JSON is required.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -30,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
+import h5py
 import numpy as np
 import pandas as pd
 
@@ -97,6 +100,67 @@ def _report_path(path: Path, base: Path) -> str:
         return str(resolved.relative_to(base.resolve()))
     except ValueError:
         return str(resolved)
+
+
+def _ordered_digest(values: Sequence[Any]) -> str:
+    digest = hashlib.sha256()
+    for value in values:
+        digest.update(str(value).encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _array_digest(values: np.ndarray) -> str:
+    array = np.ascontiguousarray(values)
+    digest = hashlib.sha256()
+    digest.update(str(array.dtype).encode("ascii"))
+    digest.update(np.asarray(array.shape, dtype="<i8").tobytes())
+    digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _update_h5_dataset_digest(
+    digest: Any, dataset: h5py.Dataset, block_bytes: int = 8 * 1024 * 1024
+) -> None:
+    digest.update(str(dataset.dtype).encode("ascii"))
+    digest.update(np.asarray(dataset.shape, dtype="<i8").tobytes())
+    if dataset.ndim == 0:
+        digest.update(np.ascontiguousarray(dataset[()]).tobytes())
+        return
+    row_items = int(np.prod(dataset.shape[1:], dtype=np.int64)) or 1
+    rows_per_block = max(1, block_bytes // (row_items * dataset.dtype.itemsize))
+    for start in range(0, dataset.shape[0], rows_per_block):
+        values = np.ascontiguousarray(dataset[start:start + rows_per_block])
+        digest.update(values.tobytes())
+
+
+def _h5ad_counts_digest(path: Path) -> str:
+    """与 baseline 生成端相同：按 H5AD 落盘 CSR 表示分块哈希 counts。"""
+    with h5py.File(path, "r") as h5:
+        ensure("layers" in h5 and "counts" in h5["layers"],
+               "H5AD lacks layers['counts']")
+        counts = h5["layers"]["counts"]
+        ensure(isinstance(counts, h5py.Group),
+               "H5AD counts layer is not stored as a CSR group")
+        encoding = counts.attrs.get("encoding-type")
+        if isinstance(encoding, bytes):
+            encoding = encoding.decode("utf-8")
+        ensure(encoding == "csr_matrix", f"unexpected counts encoding: {encoding!r}")
+        ensure({"data", "indices", "indptr"}.issubset(counts),
+               "H5AD counts CSR group is incomplete")
+        digest = hashlib.sha256(b"h5ad.csr_matrix\0")
+        digest.update(np.asarray(counts.attrs["shape"], dtype="<i8").tobytes())
+        for name in ("data", "indices", "indptr"):
+            _update_h5_dataset_digest(digest, counts[name])
+        return digest.hexdigest()
 
 
 class ValidationSuite:
@@ -595,39 +659,274 @@ def validate_cross_logs(paths: Sequence[Path], variant: str) -> dict[str, Any]:
     return {"variant": variant, "files": [path.name for path in paths], "bytes_scanned": total_bytes, "forbidden_hits": 0}
 
 
+def validate_scvi_checkpoint_state(
+    data_dir: Path, adata_path: Path
+) -> dict[str, Any]:
+    """允许当前明确缺失 checkpoint，但拒绝半套或与 H5AD 不匹配的产物。"""
+    model_dir = data_dir / "scvi_model"
+    manifest_path = data_dir / "scvi_model_manifest.json"
+    transaction_residue = sorted({
+        path.name
+        for pattern in (
+            ".scvi_model-stage-*", ".scvi_model-backup-*",
+            ".tcell_processed-stage-*", ".tcell_processed-backup-*",
+        )
+        for path in data_dir.glob(pattern)
+    })
+    model_exists = model_dir.exists()
+    manifest_exists = manifest_path.exists()
+    ensure(
+        model_exists == manifest_exists,
+        "scVI checkpoint/manifest only partially exists; remove or regenerate the pair",
+    )
+    if not model_exists:
+        ensure(
+            not transaction_residue,
+            "unfinished scVI artifact transaction detected; recover/inspect: "
+            f"{transaction_residue}",
+        )
+        backups = sorted(
+            path.name for path in data_dir.glob("pre_fix_backup_scvi_model_*")
+            if path.is_dir()
+        )
+        return {
+            "state": "absent_by_design",
+            "limitation": "X_scVI is retained, but no matching training checkpoint is claimed",
+            "isolated_legacy_backups": backups,
+        }
+
+    ensure(model_dir.is_dir(), "canonical scVI model path exists but is not a directory")
+    ensure(manifest_path.is_file(), "canonical scVI manifest path exists but is not a file")
+
+    checkpoint_path = model_dir / "model.pt"
+    ensure(checkpoint_path.is_file() and checkpoint_path.stat().st_size > 0,
+           "scVI model directory lacks a non-empty model.pt")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValidationError(f"cannot parse scVI manifest: {exc}") from exc
+    required = {
+        "n_obs", "n_vars", "latent_dim", "batch_key", "counts_layer",
+        "counts_layer_sha256", "encode_covariates", "max_epochs", "seed",
+        "ordered_obs_names_sha256", "ordered_var_names_sha256",
+        "x_scvi_sha256", "model_pt_sha256", "reload_max_abs_error",
+    }
+    ensure(required.issubset(manifest),
+           f"scVI manifest missing fields: {sorted(required - set(manifest))}")
+
+    with h5py.File(adata_path, "r") as h5:
+        obs_index_key = h5["obs"].attrs.get("_index", "_index")
+        var_index_key = h5["var"].attrs.get("_index", "_index")
+        if isinstance(obs_index_key, bytes):
+            obs_index_key = obs_index_key.decode("utf-8")
+        if isinstance(var_index_key, bytes):
+            var_index_key = var_index_key.decode("utf-8")
+        obs_names = h5["obs"][obs_index_key].asstr()[...]
+        var_names = h5["var"][var_index_key].asstr()[...]
+        ensure("X_scVI" in h5["obsm"], "H5AD lacks obsm['X_scVI']")
+        embedding = np.asarray(h5["obsm"]["X_scVI"])
+
+    ensure(embedding.ndim == 2 and np.isfinite(embedding).all(),
+           "H5AD X_scVI is not a finite matrix")
+    ensure(int(manifest["n_obs"]) == len(obs_names) == embedding.shape[0],
+           "scVI manifest n_obs does not match H5AD")
+    ensure(int(manifest["n_vars"]) == len(var_names),
+           "scVI manifest n_vars does not match H5AD")
+    ensure(int(manifest["latent_dim"]) == embedding.shape[1],
+           "scVI manifest latent_dim does not match X_scVI")
+    ensure(manifest["batch_key"] == "patient" and manifest["counts_layer"] == "counts",
+           "scVI manifest records an unexpected batch/counts configuration")
+    ensure(manifest["encode_covariates"] is False,
+           "canonical scVI baseline must use encode_covariates=False")
+    ensure(int(manifest["max_epochs"]) > 0 and int(manifest["seed"]) >= 0,
+           "scVI manifest has invalid training schedule/seed")
+    reload_error = float(manifest["reload_max_abs_error"])
+    ensure(math.isfinite(reload_error) and reload_error <= 1e-6,
+           "scVI staged save/reload verification exceeds tolerance")
+    ensure(manifest["ordered_obs_names_sha256"] == _ordered_digest(obs_names),
+           "scVI manifest obs order digest differs from H5AD")
+    ensure(manifest["ordered_var_names_sha256"] == _ordered_digest(var_names),
+           "scVI manifest var order digest differs from H5AD")
+    ensure(manifest["x_scvi_sha256"] == _array_digest(embedding),
+           "scVI manifest X_scVI digest differs from H5AD")
+    ensure(manifest["model_pt_sha256"] == _file_digest(checkpoint_path),
+           "scVI manifest model.pt digest differs from checkpoint")
+    counts_digest = str(manifest["counts_layer_sha256"])
+    ensure(len(counts_digest) == 64 and all(c in "0123456789abcdef" for c in counts_digest),
+           "scVI manifest counts-layer digest is malformed")
+    ensure(counts_digest == _h5ad_counts_digest(adata_path),
+           "scVI manifest counts-layer digest differs from H5AD")
+    return {
+        "state": "matched_checkpoint_present",
+        "model_pt_bytes": checkpoint_path.stat().st_size,
+        "n_obs": len(obs_names),
+        "n_vars": len(var_names),
+        "latent_dim": embedding.shape[1],
+        "reload_max_abs_error": reload_error,
+        "transaction_residue_cleanup_warning": transaction_residue,
+    }
+
+
 def validate_invariance_csvs(scatlas_path: Path, scvi_path: Path) -> dict[str, Any]:
     scatlas = _read_csv(scatlas_path)
     scvi = _read_csv(scvi_path)
-    common = ["n_cells_probed", "max_abs_dz_perm_batch", "mean_l2_drift_perm"]
+    ensure(len(scatlas) == 1, "scAtlasVAE invariance CSV must contain one row")
+    ensure(len(scvi) == 2, "scVI invariance CSV must contain default and encode-covariates rows")
+    common = [
+        "n_cells_probed",
+        "n_batches_probed",
+        "n_batch_changed",
+        "batch_changed_fraction",
+        "probe_seed",
+        "max_abs_dz_perm_batch",
+        "mean_l2_drift_perm",
+    ]
     scatlas_common = _numeric_values(scatlas, common, scatlas_path.name)
     scvi_common = _numeric_values(scvi, common, scvi_path.name)
-    ensure((scatlas_common[:, 0] > 0).all() and (scvi_common[:, 0] > 0).all(), "n_cells_probed must be positive")
-    ensure((scatlas_common[:, 1:] >= 0).all() and (scvi_common[:, 1:] >= 0).all(), "invariance drifts must be non-negative")
+    ensure((scatlas_common[:, 0] == 8000).all() and (scvi_common[:, 0] == 8000).all(), "invariance probe must contain exactly 8000 cells")
+    ensure((scatlas_common[:, 1:] >= 0).all() and (scvi_common[:, 1:] >= 0).all(), "invariance metrics must be non-negative")
+    ensure((scatlas_common[:, 1] == 45).all() and (scvi_common[:, 1] == 45).all(), "invariance probe must cover all 45 patients")
+    ensure((scatlas_common[:, 2] == scatlas_common[:, 0]).all() and (scvi_common[:, 2] == scvi_common[:, 0]).all(), "invariance n_batch_changed must equal n_cells_probed")
+    ensure(np.allclose(scatlas_common[:, 3], 1.0, atol=ATOL, rtol=0), "scAtlasVAE probe did not change every batch label")
+    ensure(np.allclose(scvi_common[:, 3], 1.0, atol=ATOL, rtol=0), "scVI probe did not change every batch label")
+    ensure((scatlas_common[:, 4] == 0).all() and (scvi_common[:, 4] == 0).all(), "unexpected invariance probe seed")
+    ensure("probe_indices_sha256" in scatlas.columns and "probe_indices_sha256" in scvi.columns, "invariance CSV lacks probe index digest")
+    digests = set(scatlas["probe_indices_sha256"].astype(str)) | set(scvi["probe_indices_sha256"].astype(str))
+    ensure(len(digests) == 1 and len(next(iter(digests))) == 64, "probe indices differ across invariance models")
     scatlas_none = _numeric_values(scatlas, ["max_abs_dz_none_batch"], scatlas_path.name)
     ensure((scatlas_none >= 0).all(), "scAtlasVAE none-batch drift is negative")
-    ensure(float(np.max(scatlas_common[:, 1:])) <= 1e-7 and float(np.max(scatlas_none)) <= 1e-7, "scAtlasVAE encoder is not batch-invariant within 1e-7")
+    ensure(float(np.max(scatlas_common[:, 5:])) <= 1e-7 and float(np.max(scatlas_none)) <= 1e-7, "scAtlasVAE encoder is not batch-invariant within 1e-7")
     # max_abs_dz_none_batch is intentionally not applicable/blank for scVI.
     ensure("max_abs_dz_none_batch" in scvi.columns, "scVI invariance CSV lacks max_abs_dz_none_batch")
-    return {"scatlas_rows": len(scatlas), "scvi_rows": len(scvi), "scatlas_max_drift": float(np.max(scatlas_common[:, 1:]))}
+    encoder_text = scvi["encoder"].astype(str)
+    encoded_mask = encoder_text.str.contains("F(X,B)", regex=False).to_numpy()
+    ensure(int(encoded_mask.sum()) == 1, "cannot identify exactly one batch-encoded scVI row")
+    encoded = scvi_common[encoded_mask][0]
+    default = scvi_common[~encoded_mask][0]
+    ensure(float(np.max(default[5:])) <= 1e-7, "default scVI encoder unexpectedly changed with batch metadata")
+    ensure(float(encoded[5]) > 1e-6 and float(encoded[6]) > 1e-6, "batch-encoded scVI did not show measurable latent drift")
+    return {
+        "scatlas_rows": len(scatlas),
+        "scvi_rows": len(scvi),
+        "patients_covered": int(scatlas_common[0, 1]),
+        "batch_changed_fraction": float(scatlas_common[0, 3]),
+        "probe_indices_sha256": next(iter(digests)),
+        "scatlas_max_drift": float(np.max(scatlas_common[:, 5:])),
+        "scvi_encoded_mean_l2_drift": float(encoded[6]),
+    }
 
 
-def validate_invariance_npz(path: Path) -> dict[str, Any]:
+def validate_invariance_npz(
+    path: Path, scatlas_csv: Path, scvi_csv: Path, adata_path: Path
+) -> dict[str, Any]:
     with np.load(path, allow_pickle=False) as store:
-        ensure(store.files, "invariance NPZ has no arrays")
-        for key in store.files:
-            values = np.asarray(store[key])
-            _ensure_finite_array(values, key)
-            ensure(values.ndim == 2 and values.shape[0] > 0 and values.shape[1] > 0, f"{key} has invalid shape {values.shape}")
-        for key in store.files:
-            if not key.endswith("_real"):
-                continue
-            perm_key = key[:-5] + "_perm"
-            ensure(perm_key in store.files, f"missing paired array {perm_key}")
-            ensure(store[key].shape == store[perm_key].shape, f"{key}/{perm_key} shapes differ")
-        ensure("scAtlasVAE_real" in store.files and "scAtlasVAE_perm" in store.files, "missing scAtlasVAE real/perm arrays")
-        max_abs = float(np.max(np.abs(store["scAtlasVAE_real"] - store["scAtlasVAE_perm"])))
-        ensure(max_abs <= 1e-7, f"scAtlasVAE stored real/perm drift is {max_abs}")
-        return {"keys": list(store.files), "scatlas_stored_max_abs_drift": max_abs}
+        tags = ("scAtlasVAE", "scVI_default", "scVI_enccov")
+        expected_keys = {
+            f"{tag}_{suffix}"
+            for tag in tags
+            for suffix in ("real", "perm", "obs_indices", "batch_real", "batch_perm")
+        }
+        ensure(set(store.files) == expected_keys,
+               f"invariance NPZ keys differ: missing={sorted(expected_keys - set(store.files))}, extra={sorted(set(store.files) - expected_keys)}")
+        reference_indices = None
+        reference_batch_real = None
+        reference_batch_perm = None
+        drift: dict[str, dict[str, float]] = {}
+        for tag in tags:
+            required = {
+                f"{tag}_real", f"{tag}_perm", f"{tag}_obs_indices",
+                f"{tag}_batch_real", f"{tag}_batch_perm",
+            }
+            ensure(required.issubset(store.files), f"{tag}: missing NPZ keys {sorted(required - set(store.files))}")
+            real = np.asarray(store[f"{tag}_real"])
+            perm = np.asarray(store[f"{tag}_perm"])
+            obs_indices = np.asarray(store[f"{tag}_obs_indices"])
+            batch_real = np.asarray(store[f"{tag}_batch_real"])
+            batch_perm = np.asarray(store[f"{tag}_batch_perm"])
+            for key, values in (
+                (f"{tag}_real", real), (f"{tag}_perm", perm),
+                (f"{tag}_obs_indices", obs_indices),
+                (f"{tag}_batch_real", batch_real),
+                (f"{tag}_batch_perm", batch_perm),
+            ):
+                _ensure_finite_array(values, key)
+            ensure(real.ndim == perm.ndim == 2 and real.shape == perm.shape, f"{tag}: invalid latent pair shapes")
+            ensure(real.shape[0] == 8000 and real.shape[1] > 0, f"{tag}: expected 8000 latent rows, got {real.shape}")
+            ensure(obs_indices.shape == batch_real.shape == batch_perm.shape == (real.shape[0],), f"{tag}: metadata length mismatch")
+            ensure(len(np.unique(obs_indices)) == len(obs_indices), f"{tag}: duplicate probe obs indices")
+            ensure(np.array_equal(np.sort(batch_real), np.sort(batch_perm)), f"{tag}: batch marginal changed")
+            ensure(np.all(batch_real != batch_perm), f"{tag}: some stored cells kept their real batch")
+            ensure(len(np.unique(batch_real)) == 45, f"{tag}: stored probe does not cover 45 patients")
+            if reference_indices is None:
+                reference_indices = obs_indices.copy()
+                reference_batch_real = batch_real.copy()
+                reference_batch_perm = batch_perm.copy()
+            else:
+                ensure(np.array_equal(reference_indices, obs_indices), f"{tag}: probe cells differ across models")
+                ensure(np.array_equal(reference_batch_real, batch_real), f"{tag}: real batch codes differ across models")
+                ensure(np.array_equal(reference_batch_perm, batch_perm), f"{tag}: permuted batch assignment differs across models")
+            delta = np.abs(real - perm)
+            drift[tag] = {
+                "max_abs": float(np.max(delta)),
+                "mean_l2": float(np.mean(np.linalg.norm(real - perm, axis=1))),
+            }
+
+        ensure(drift["scAtlasVAE"]["max_abs"] <= 1e-7, "stored scAtlasVAE latent is batch-variant")
+        ensure(drift["scVI_default"]["max_abs"] <= 1e-7, "stored default scVI latent is batch-variant")
+        ensure(drift["scVI_enccov"]["max_abs"] > 1e-6 and drift["scVI_enccov"]["mean_l2"] > 1e-6,
+               "stored batch-encoded scVI latent does not show drift")
+
+        indices_digest = hashlib.sha256(
+            np.asarray(reference_indices, dtype="<i8").tobytes()
+        ).hexdigest()
+        with h5py.File(adata_path, "r") as h5:
+            patient_node = h5["obs"]["patient"]
+            ensure(
+                isinstance(patient_node, h5py.Group)
+                and "categories" in patient_node
+                and "codes" in patient_node,
+                "tcell_processed.h5ad::obs['patient'] is not stored categorically",
+            )
+            patient_categories = patient_node["categories"].asstr()[...]
+            patient_codes = np.asarray(patient_node["codes"][...], dtype=np.int64)
+        ensure(
+            np.min(reference_indices) >= 0
+            and np.max(reference_indices) < len(patient_codes),
+            "probe obs indices fall outside tcell_processed.h5ad",
+        )
+        patient_labels = patient_categories[patient_codes[reference_indices]]
+        canonical_categories = np.unique(patient_labels)
+        expected_batch_real = np.searchsorted(
+            canonical_categories, patient_labels
+        ).astype(np.int64, copy=False)
+        ensure(
+            np.array_equal(reference_batch_real, expected_batch_real),
+            "stored canonical batch_real does not match H5AD patient labels at probe indices",
+        )
+        scatlas_frame = _read_csv(scatlas_csv)
+        scvi_frame = _read_csv(scvi_csv)
+        ensure(str(scatlas_frame.iloc[0]["probe_indices_sha256"]) == indices_digest,
+               "scAtlasVAE CSV probe digest differs from NPZ")
+        ensure((scvi_frame["probe_indices_sha256"].astype(str) == indices_digest).all(),
+               "scVI CSV probe digest differs from NPZ")
+        encoded_mask = scvi_frame["encoder"].astype(str).str.contains("F(X,B)", regex=False)
+        ensure(int(encoded_mask.sum()) == 1, "cannot map scVI CSV rows to NPZ tags")
+        csv_rows = {
+            "scAtlasVAE": scatlas_frame.iloc[0],
+            "scVI_default": scvi_frame.loc[~encoded_mask].iloc[0],
+            "scVI_enccov": scvi_frame.loc[encoded_mask].iloc[0],
+        }
+        for tag, row in csv_rows.items():
+            ensure(abs(float(row["max_abs_dz_perm_batch"]) - drift[tag]["max_abs"]) <= ATOL,
+                   f"{tag}: CSV/NPZ max drift mismatch")
+            ensure(abs(float(row["mean_l2_drift_perm"]) - drift[tag]["mean_l2"]) <= ATOL,
+                   f"{tag}: CSV/NPZ mean L2 mismatch")
+        return {
+            "keys": list(store.files),
+            "drift": drift,
+            "n_probe": len(reference_indices),
+            "probe_indices_sha256": indices_digest,
+        }
 
 
 def validate_scib_table(path: Path, expected_embeddings: set[str]) -> dict[str, Any]:
@@ -726,6 +1025,138 @@ def validate_phase3_overlap(path: Path) -> dict[str, Any]:
     return {"rows": len(frame), "mean_knn_jaccard": [float(value) for value in values[:, 2]]}
 
 
+def validate_phase3_structure_metrics(
+    csv_path: Path,
+    json_path: Path,
+    h5ad_path: Path,
+    benchmark_path: Path,
+) -> dict[str, Any]:
+    """Recompute the read-only Phase 3 evidence and match both stored views."""
+    # The generator performs no writes from build_metrics; importing it here
+    # keeps the metric definitions single-sourced while the assertions below
+    # independently enforce the scientific contract used by the reports.
+    from phase3_structure_metrics import build_metrics
+
+    stored_frame = _read_csv(csv_path)
+    required_columns = {"metric", "scope", "embedding", "value", "source", "detail"}
+    ensure(
+        required_columns == set(stored_frame.columns),
+        f"unexpected CSV columns: {list(stored_frame.columns)}",
+    )
+    ensure(not stored_frame.duplicated(["metric", "scope", "embedding"]).any(),
+           "structure-metric CSV contains duplicate metric/scope/embedding rows")
+    stored_values = _numeric_values(stored_frame, ["value"], csv_path.name).ravel()
+
+    try:
+        stored_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValidationError(f"invalid UTF-8 JSON: {exc}") from exc
+    expected_payload, expected_frame = build_metrics(h5ad_path, benchmark_path)
+
+    ensure(stored_payload == expected_payload,
+           "JSON does not exactly match metrics recomputed from the current H5AD/benchmark")
+    ensure(list(stored_frame.columns) == list(expected_frame.columns),
+           "CSV column order differs from the generator contract")
+    string_columns = [column for column in stored_frame.columns if column != "value"]
+    ensure(
+        stored_frame[string_columns].fillna("").astype(str).equals(
+            expected_frame[string_columns].fillna("").astype(str)
+        ),
+        "CSV metric labels/provenance differ from recomputed evidence",
+    )
+    ensure(
+        np.allclose(stored_values, expected_frame["value"].to_numpy(float), atol=1e-12, rtol=1e-12),
+        "CSV values differ from recomputed evidence",
+    )
+
+    ensure(stored_payload.get("schema_version") == 1, "unexpected structure-metric schema")
+    ensure(stored_payload.get("method") == "read_only_existing_embeddings_no_training",
+           "structure evidence is not marked read-only/no-training")
+    inputs = stored_payload["inputs"]
+    ensure(inputs["n_obs"] == 104805, f"unexpected Phase 3 n_obs: {inputs['n_obs']}")
+    ensure(inputs["n_labels"] == 17, f"unexpected Phase 3 label count: {inputs['n_labels']}")
+    ensure(len(inputs["embedding_sha256"]) == 4, "not all four Phase 3 embeddings are hash-bound")
+
+    correlations = stored_payload["centroid_distance_correlations"]
+    ensure(0.89 < correlations["latent_centroid_distance_pearson"] < 0.92,
+           "latent centroid Pearson is outside the documented range")
+    ensure(0.88 < correlations["latent_centroid_distance_spearman"] < 0.91,
+           "latent centroid Spearman is outside the documented range")
+    ensure(0.62 < correlations["umap_centroid_distance_pearson"] < 0.65,
+           "UMAP centroid Pearson is outside the documented range")
+    ensure(0.55 < correlations["umap_centroid_distance_spearman"] < 0.59,
+           "UMAP centroid Spearman is outside the documented range")
+
+    official = "X_scAtlasVAE_sup"
+    minimal = "X_minimal"
+    asw = stored_payload["label_asw"]
+    ensure(np.isclose(asw[official]["label_asw_raw"], 2 * asw[official]["silhouette_label_scaled"] - 1),
+           "official raw ASW is not the exact inverse scaling of scib-metrics")
+    ensure(np.isclose(asw[minimal]["label_asw_raw"], 2 * asw[minimal]["silhouette_label_scaled"] - 1),
+           "minimal raw ASW is not the exact inverse scaling of scib-metrics")
+    ensure(0.010 < asw[official]["label_asw_raw"] < 0.012,
+           "official raw label ASW is outside the documented range")
+    ensure(0.001 < asw[minimal]["label_asw_raw"] < 0.002,
+           "minimal raw label ASW is outside the documented range")
+
+    graph = stored_payload["scanpy_neighbor_graph"]
+    for embedding in (official, minimal):
+        record = graph[embedding]
+        ensure(record["scanpy_n_neighbors_config"] == 15,
+               f"{embedding} Scanpy n_neighbors config is not 15")
+        ensure(record["stored_nonself_neighbors_min"] == 14,
+               f"{embedding} graph does not store 14 non-self neighbours per row")
+        ensure(record["stored_nonself_neighbors_max"] == 14,
+               f"{embedding} graph has a variable/unexpected row degree")
+        ensure(np.isclose(record["stored_nonself_neighbors_mean"], 14.0),
+               f"{embedding} mean non-self graph degree is not 14")
+    ensure(0.532 < graph[official]["fine_label_purity_micro"] < 0.534,
+           "official Scanpy-neighbour label purity is outside the documented range")
+    ensure(0.525 < graph[minimal]["fine_label_purity_micro"] < 0.527,
+           "minimal Scanpy-neighbour label purity is outside the documented range")
+
+    literal = stored_payload["literal_15_nonself_knn"]
+    ensure(literal["k"] == 15, "literal non-self kNN comparison does not use k=15")
+    ensure(0.531 < literal[official]["micro"] < 0.534,
+           "official literal-15 label purity is outside the expected range")
+    ensure(0.524 < literal[minimal]["micro"] < 0.527,
+           "minimal literal-15 label purity is outside the expected range")
+
+    random = stored_payload["random_baselines"]
+    ensure(0.105 < random["same_label_probability_sum_p_squared"] < 0.108,
+           "same-label random baseline is outside the documented range")
+    ensure(1.3e-4 < random["independent_30nn_jaccard_ratio_of_expectations_approx"] < 1.5e-4,
+           "random 30-NN Jaccard approximation is outside the documented range")
+    return {
+        "rows": len(stored_frame),
+        "n_obs": inputs["n_obs"],
+        "n_labels": inputs["n_labels"],
+        "centroid_distance_correlations": correlations,
+        "raw_label_asw": {
+            official: asw[official]["label_asw_raw"],
+            minimal: asw[minimal]["label_asw_raw"],
+        },
+        "scanpy_n_neighbors_config": 15,
+        "stored_nonself_neighbors_per_cell": 14,
+        "scanpy_graph_label_purity": {
+            official: graph[official]["fine_label_purity_micro"],
+            minimal: graph[minimal]["fine_label_purity_micro"],
+        },
+        "literal_15_nonself_label_purity": {
+            official: literal[official]["micro"],
+            minimal: literal[minimal]["micro"],
+        },
+        "same_label_random_baseline": random["same_label_probability_sum_p_squared"],
+    }
+
+
+def validate_report_figure_manifest(data_dir: Path) -> dict[str, Any]:
+    """Validate canonical report PNGs against the current generator and inputs."""
+    from validate_figure_manifest import validate_figure_manifest
+
+    return validate_figure_manifest(data_dir, project_root=data_dir.parent)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -761,6 +1192,13 @@ def main() -> int:
     log_dir = args.cross_log_dir if args.cross_log_dir.is_absolute() else data_dir / args.cross_log_dir
     output_path = args.output if args.output.is_absolute() else data_dir / args.output
     suite = ValidationSuite(data_dir, args.allow_missing)
+    processed_adata = data_dir / "tcell_processed.h5ad"
+
+    suite.check(
+        "scvi.checkpoint_state",
+        [processed_adata],
+        lambda: validate_scvi_checkpoint_state(data_dir, processed_adata),
+    )
 
     paper_csv = data_dir / "phase5_transfer_results_paper.csv"
     paper_npz = data_dir / "phase5_transfer_cm_paper.npz"
@@ -853,8 +1291,10 @@ def main() -> int:
     )
     suite.check(
         "invariance.latents",
-        [invariance_npz],
-        lambda: validate_invariance_npz(invariance_npz),
+        [invariance_npz, scatlas_invariance, scvi_invariance, processed_adata],
+        lambda: validate_invariance_npz(
+            invariance_npz, scatlas_invariance, scvi_invariance, processed_adata
+        ),
     )
 
     phase4 = data_dir / "phase4_ablation_results.csv"
@@ -887,6 +1327,26 @@ def main() -> int:
             {"X_pca", "X_scVI", "X_scAtlasVAE_sup", "X_minimal"},
         ),
         required=False,
+    )
+    phase3_structure_csv = data_dir / "phase3_structure_metrics.csv"
+    phase3_structure_json = data_dir / "phase3_structure_metrics.json"
+    suite.check(
+        "phase3.structure_metrics",
+        [phase3_structure_csv, phase3_structure_json, processed_adata, minimal_benchmark],
+        lambda: validate_phase3_structure_metrics(
+            phase3_structure_csv,
+            phase3_structure_json,
+            processed_adata,
+            minimal_benchmark,
+        ),
+    )
+
+    figure_manifest = data_dir / "figure_manifest.json"
+    figure_generator = data_dir.parent / "scripts" / "figgen" / "build_real.py"
+    suite.check(
+        "figures.canonical_manifest",
+        [figure_manifest, figure_generator],
+        lambda: validate_report_figure_manifest(data_dir),
     )
 
     summary = suite.summary()

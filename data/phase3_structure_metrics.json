@@ -1,0 +1,114 @@
+{
+  "centroid_distance_correlations": {
+    "latent_centroid_distance_pearson": 0.9031791010481096,
+    "latent_centroid_distance_spearman": 0.8945947235341825,
+    "umap_centroid_distance_pearson": 0.6333350395839636,
+    "umap_centroid_distance_spearman": 0.5696674776966747
+  },
+  "inputs": {
+    "benchmark_csv": "phase5_minimal_bench.csv",
+    "embedding_sha256": {
+      "X_minimal": "348bbd1dde3926be82b3d4a833074cef8aa785694590b421fc878b629c5f7f88",
+      "X_scAtlasVAE_sup": "b4b02ce5c660eddf94ecfdc5b3eedf808effce11540810192ad588bbc3383bbf",
+      "X_umap_mine": "18ffe351534d68730eeb0e12a9f1862c854c5987bc27fa969d1a430e2f822ed9",
+      "X_umap_official": "8c4e04bbeb2cacd2cb799342460b6825cb018b16f396d5754164bfdc0e0426a8"
+    },
+    "h5ad": "tcell_processed.h5ad",
+    "label_categories": [
+      "CD8.c01.Tn.MAL",
+      "CD8.c02.Tm.IL7R",
+      "CD8.c03.Tm.RPS12",
+      "CD8.c04.Tm.CD52",
+      "CD8.c05.Tem.CXCR5",
+      "CD8.c06.Tem.GZMK",
+      "CD8.c07.Temra.CX3CR1",
+      "CD8.c08.Tk.TYROBP",
+      "CD8.c09.Tk.KIR2DL4",
+      "CD8.c10.Trm.ZNF683",
+      "CD8.c11.Tex.PDCD1",
+      "CD8.c12.Tex.CXCL13",
+      "CD8.c13.Tex.myl12a",
+      "CD8.c14.Tex.TCF7",
+      "CD8.c15.ISG.IFIT1",
+      "CD8.c16.MAIT.SLC4A10",
+      "CD8.c17.Tm.NME1"
+    ],
+    "label_key": "cell_type",
+    "n_labels": 17,
+    "n_obs": 104805
+  },
+  "label_asw": {
+    "X_minimal": {
+      "kmeans_ari": 0.17609738860194188,
+      "kmeans_nmi": 0.3121410897464832,
+      "label_asw_raw": 0.001563079999999939,
+      "silhouette_label_scaled": 0.50078154
+    },
+    "X_scAtlasVAE_sup": {
+      "kmeans_ari": 0.247185690888345,
+      "kmeans_nmi": 0.3707757526072285,
+      "label_asw_raw": 0.01078240000000008,
+      "silhouette_label_scaled": 0.5053912
+    },
+    "source": "phase5_minimal_bench.csv scib-metrics Silhouette label; raw=2*scaled-1"
+  },
+  "literal_15_nonself_knn": {
+    "X_minimal": {
+      "macro": 0.4243230150529917,
+      "micro": 0.5250188445207766
+    },
+    "X_scAtlasVAE_sup": {
+      "macro": 0.4571275194484181,
+      "micro": 0.532307300860328
+    },
+    "k": 15,
+    "method": "scipy.spatial.cKDTree, self removed explicitly"
+  },
+  "method": "read_only_existing_embeddings_no_training",
+  "random_baselines": {
+    "independent_30nn_jaccard_ratio_of_expectations_approx": 0.0001431447957323765,
+    "jaccard_k": 30,
+    "same_label_probability_sum_p_squared": 0.10643661962095392
+  },
+  "scanpy_neighbor_graph": {
+    "X_minimal": {
+      "coarse_lineage_purity_macro": 0.5958390753912006,
+      "coarse_lineage_purity_micro": 0.6122008900883954,
+      "fine_label_purity_macro": 0.4261154441068177,
+      "fine_label_purity_micro": 0.5262310276908817,
+      "graph_key": "mine_distances",
+      "scanpy_n_neighbors_config": 15,
+      "stored_nonself_neighbors_max": 14,
+      "stored_nonself_neighbors_mean": 14.0,
+      "stored_nonself_neighbors_min": 14
+    },
+    "X_scAtlasVAE_sup": {
+      "coarse_lineage_purity_macro": 0.6297974439127192,
+      "coarse_lineage_purity_micro": 0.6219141671267046,
+      "fine_label_purity_macro": 0.4585365555653258,
+      "fine_label_purity_micro": 0.5331527258105189,
+      "graph_key": "official_distances",
+      "scanpy_n_neighbors_config": 15,
+      "stored_nonself_neighbors_max": 14,
+      "stored_nonself_neighbors_mean": 14.0,
+      "stored_nonself_neighbors_min": 14
+    }
+  },
+  "schema_version": 1,
+  "umap_30_nonself_knn": {
+    "X_umap_mine": {
+      "coarse_macro": 0.45236875104293756,
+      "coarse_micro": 0.5070724997217053,
+      "fine_macro": 0.2890976310999315,
+      "fine_micro": 0.4144799071291128
+    },
+    "X_umap_official": {
+      "coarse_macro": 0.512648401765301,
+      "coarse_micro": 0.5352868024744366,
+      "fine_macro": 0.33806459228108254,
+      "fine_micro": 0.43684207178410706
+    },
+    "k": 30,
+    "method": "scipy.spatial.cKDTree, self removed explicitly"
+  }
+}

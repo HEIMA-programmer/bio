@@ -5,7 +5,8 @@
     把两套标签体系**并行对齐**。这是 scVI/scPoli 等做不到的（它们只整合、不对齐标签）。
 
 我们的复现
-    图谱 1 = 我们的 TCellLandscape（Zheng/GSE156728，~10.5 万 CD8，meta.cluster 17 亚型）。
+    图谱 1 = 我们的 Zheng/GSE156728 重建对象（~10.5 万 CD8，meta.cluster 17 亚型；
+             不是带 28 个 study_name 的论文成品 TCellLandscape）。
     图谱 2 = Yost 2019 BCC（GSE123813，10X，CD8 亚型 CD8_act/eff/ex/ex_act/mem）——
              真实、独立、且本身就是论文 28 studies 之一，是货真价实的跨研究/跨癌种挑战。
     做法：合并两图谱，batch=[patient, atlas]（atlas 作附加批次），
@@ -48,7 +49,7 @@ from scipy.sparse import csr_matrix, vstack
 from sklearn.metrics import silhouette_score
 from sklearn.neighbors import NearestNeighbors
 
-RAW_ZHENG = "TCellLandscape_raw.h5ad"          # 我们的全量 raw（105k × 24148）
+RAW_ZHENG = "TCellLandscape_raw.h5ad"          # 历史兼容名；Zheng/GSE156728 8 癌种全量 raw（105k × 24148）
 YOST_META = "GSE123813_bcc_tcell_metadata.txt.gz"
 YOST_COUNTS = "GSE123813_bcc_scRNA_counts.txt.gz"
 YOST_CD8 = ["CD8_act", "CD8_eff", "CD8_ex", "CD8_ex_act", "CD8_mem"]
@@ -253,7 +254,7 @@ def main():
                          "调到 3e-5 可稳住——见报告 Task 2 踩坑）")
     ap.add_argument("--pred-last", type=int, default=0,
                     help="分类头训练轮数 pred_last_n_epoch：0=全程(=max_epoch，旧行为)；"
-                         "10=论文默认(末10轮)。用于检验标签对齐/混合结论是否依赖'分类头全程训练'。")
+                         "10=官方源码默认(末10轮；论文Methods未明确披露)。用于检验结果对分类头日程的敏感性。")
     args = ap.parse_args()
 
     print("载入两个图谱...")

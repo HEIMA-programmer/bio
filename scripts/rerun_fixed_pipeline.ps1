@@ -99,9 +99,18 @@ try {
     Invoke-PipelineStep -Name "scatlasvae_invariance_probe" -PythonExe $ScAtlasPython -Arguments @(
         "..\scripts\phase5_batch_invariance_probe.py", "--model", "scatlasvae"
     )
+    Invoke-PipelineStep -Name "scvi_invariance_probe" -PythonExe $ScviPython -Arguments @(
+        "..\scripts\phase5_batch_invariance_probe.py", "--model", "scvi"
+    )
+    Invoke-PipelineStep -Name "phase3_structure_metrics" -PythonExe $ScibPython -Arguments @(
+        "..\scripts\phase3_structure_metrics.py"
+    )
     Invoke-PipelineStep -Name "regenerate_corrected_figures" -PythonExe $ScibPython -Arguments @(
-        "scripts\figgen\build_real.py", "bench", "umap_integration", "transfer", "invariance", "cross_atlas"
+        "scripts\figgen\build_real.py", "all"
     ) -WorkingDirectory $RepoRoot
+    Invoke-PipelineStep -Name "final_validation" -PythonExe $ScibPython -Arguments @(
+        "..\scripts\validate_corrected_outputs.py", "--cross-log-dir", "fixed_pipeline_logs"
+    )
     Write-PipelineStatus -Status "complete" -Step "all" -Message "All corrected reruns completed successfully."
     exit 0
 }

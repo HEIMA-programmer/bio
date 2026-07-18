@@ -24,7 +24,7 @@ BATCH_KEY = "patient"
 LABEL_KEY = "cell_type"
 # 阶段 5 · E2：四方对比，复现论文 Ext. Data Fig. 2a 把 scAtlasVAE 分"无监督/监督"两根柱的核心论点。
 #   X_pca              未校正基线
-#   X_scVI             经典 batch-variant VAE（编码器吃 batch）
+#   X_scVI             scVI baseline；默认 encode_covariates=False，encoder 不显式吃 batch
 #   X_scAtlasVAE_unsup 无监督 scAtlasVAE（不带 label_key，纯整合）—— 预期 ≈ scVI
 #   X_scAtlasVAE_sup   监督 scAtlasVAE（带 label_key、半监督分类头）—— 预期最高
 # 旧名 X_scAtlasVAE 即监督版；--mode unsup 那趟已补别名 X_scAtlasVAE_sup。
